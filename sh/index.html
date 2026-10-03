@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Sh with Comments</title>
+
+    <link rel="icon" href="https://cdn.gitgpt.chat/rtx/images/bash.png" type="image/png">
+    <link rel="apple-touch-icon" href="https://cdn.gitgpt.chat/rtx/images/bash.png" sizes="180x180">
+    <link rel="icon" type="image/png" href="https://cdn.gitgpt.chat/rtx/images/bash.png" sizes="192x192">
+    <link rel="icon" type="image/png" href="https://cdn.gitgpt.chat/rtx/images/bash.png" sizes="512x512">
+    <meta property="og:url" content="">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <style>
+        /* [All your existing CSS remains exactly the same] */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1e1e1e;
+            height: 100vh;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .main-wrapper {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Main content area - vertical split */
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #script-container {
+            flex: 1 1 auto;
+            min-height: 100px;
+            overflow: auto;
+            background: #1e1e1e;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Resizer */
+        .resizer {
+            height: 8px;
+            background: #252526;
+            border-top: 1px solid #3e3e42;
+            border-bottom: 1px solid #3e3e42;
+            cursor: row-resize;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6e7681;
+            font-size: 12px;
+            user-select: none;
+            z-index: 10;
+            transition: background 0.2s;
+        }
+
+        .resizer:hover {
+            background: #2d2d30;
+        }
+
+        .resizer:active {
+            background: #3e3e42;
+        }
+
+        .resizer i {
+            font-size: 12px;
+            transform: rotate(90deg);
+        }
+
+        /* Comments container - bottom */
+        #commentsContainer {
+            flex: 0 0 300px;
+            min-height: 100px;
+            max-height: 80vh;
+            background: #252526;
+            border-top: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: flex 0.1s ease;
+        }
+
+        #commentsContainer.hidden {
+            display: none;
+        }
+
+        #comments {
+            width: 100%;
+            height: 100%;
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: #1e1e1e;
+        }
+
+        /* Floating icon toolbar */
+        .icon-toolbar {
+            position: fixed;
+            top: 9px;
+            right: 9px;
+            z-index: 100;
+            display: flex;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            min-width: 36px;
+            min-height: 36px;
+            background: #2d2d30;
+            color: #cccccc;
+            border: 1px solid #3e3e42;
+            border-radius: 6px;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            text-decoration: none;
+        }
+
+        .icon-btn:hover {
+            background: #3e3e42;
+            color: #ffffff;
+        }
+
+        .icon-btn:active {
+            transform: scale(0.95);
+        }
+
+        .icon-btn.active {
+            background: #0e639c;
+            color: white;
+            border-color: #1177bb;
+        }
+
+        /* Play button - green when active */
+        .icon-btn.play-active {
+            background: #2ea043;
+            color: white;
+            border-color: #3fb950;
+        }
+
+        /* Right panel - AI Assistant */
+        .panel {
+            width: 85vw;
+            max-width: 400px;
+            height: 100vh;
+            background: #252526;
+            border-left: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 90;
+            animation: slideIn 0.2s ease;
+            color: #ffffff;
+        }
+
+        .panel.hidden {
+            display: none;
+        }
+
+        .panel-header {
+            padding: 8px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .panel-content {
+            flex: 1;
+            padding: 20px 16px;
+            overflow-y: auto;
+            color: #ffffff;
+            font-size: 14px;
+            line-height: 1.5;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .prompt-box {
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 20px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            color: #ffffff;
+        }
+
+        .diff-area {
+            width: 100%;
+            height: 200px;
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            border-radius: 10px;
+            color: #ffffff;
+            padding: 12px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            resize: vertical;
+            margin: 15px 0;
+        }
+
+        .panel-btn {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            margin: 8px 0;
+            width: 100%;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .panel-btn:active {
+            background: #1177bb;
+            transform: scale(0.98);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+            }
+
+            to {
+                transform: translateX(0);
+            }
+        }
+
+        /* Script line styles */
+        .script-line {
+            display: flex;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            min-width: fit-content;
+            width: 100%;
+            color: #ffffff;
+        }
+
+        .line-number {
+            display: inline-block;
+            width: 48px;
+            padding: 0 8px 0 16px;
+            color: #6e7681;
+            text-align: right;
+            user-select: none;
+            border-right: 1px solid #404040;
+            margin-right: 16px;
+            background: #1e1e1e;
+            flex-shrink: 0;
+        }
+
+        .line-content {
+            flex: 1;
+            white-space: pre;
+            color: #ffffff;
+        }
+
+        /* Toast notifications */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2d2d30;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 14px;
+            z-index: 1000;
+            border: 1px solid #3e3e42;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+        }
+
+        /* Loading indicator */
+        .loading-progress {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #2d2d30;
+            color: white;
+            padding: 20px 40px;
+            border-radius: 10px;
+            border: 1px solid #3e3e42;
+            text-align: center;
+            z-index: 1000;
+        }
+
+        .progress-bar {
+            width: 300px;
+            height: 4px;
+            background: #3e3e42;
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #0e639c;
+            width: 0%;
+            transition: width 0.2s;
+        }
+
+        /* Popup Overlay */
+        .popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .popup-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .popup-content {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+
+        .popup-overlay.active .popup-content {
+            transform: scale(1);
+        }
+
+        .popup-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 18px;
+            background: #1e1e1e;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .popup-body {
+            padding: 24px 20px;
+        }
+
+        .popup-section {
+            margin-bottom: 24px;
+        }
+
+        .popup-section h3 {
+            color: #9cdcfe;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .deploy-command {
+            background: #1e1e1e;
+            border: 1px solid #3e3e42;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            color: #ce9178;
+            margin-bottom: 12px;
+            word-break: break-all;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .deploy-command code {
+            flex: 1;
+            color: #ce9178;
+        }
+
+        .deploy-command .copy-btn {
+            background: #2d2d30;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #cccccc;
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+
+        .deploy-command .copy-btn:hover {
+            background: #3e3e42;
+            color: #ffffff;
+        }
+
+        .deploy-options {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .deploy-btn {
+            flex: 1;
+            min-width: 120px;
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .deploy-btn:hover {
+            background: #1177bb;
+            transform: translateY(-1px);
+        }
+
+        .deploy-btn.digitalocean {
+            background: #0080ff;
+        }
+
+        .deploy-btn.digitalocean:hover {
+            background: #0066cc;
+        }
+
+        .deploy-btn.aws {
+            background: #ff9900;
+            color: #000;
+        }
+
+        .deploy-btn.aws:hover {
+            background: #ffad33;
+        }
+
+        .info-box {
+            background: #1e1e1e;
+            border-left: 3px solid #9cdcfe;
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-top: 16px;
+            color: #cccccc;
+            font-size: 13px;
+        }
+
+        .info-box code {
+            background: #2d2d30;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #ce9178;
+        }
+
+        .info-box i {
+            color: #9cdcfe;
+            margin-right: 8px;
+        }
+
+        /* iPhone SE optimization */
+        @media only screen and (max-width: 375px) and (max-height: 667px) {
+            .icon-btn {
+                width: 44px;
+                height: 44px;
+                font-size: 22px;
+            }
+
+            .icon-btn img {
+                width: 24px !important;
+                height: 24px !important;
+            }
+
+            .panel {
+                width: 100vw;
+            }
+
+            .popup-content {
+                width: 95%;
+                max-height: 90vh;
+            }
+
+            .deploy-options {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-wrapper">
+        <!-- Main content area with vertical split -->
+        <div class="content-area">
+            <div id="script-container"></div>
+
+            <!-- Draggable Resizer -->
+            <div class="resizer" id="resizer" title="Drag to resize">
+                <span>⋮⋮⋮</span>
+            </div>
+
+            <!-- Comments Container (Bottom) -->
+            <div id="commentsContainer" class="hidden">
+                <div id="comments"></div>
+            </div>
+        </div>
+
+        <!-- Right Panel (AI Assistant) -->
+        <div id="rightPanel" class="panel hidden"></div>
+    </div>
+
+    <!-- Floating icon toolbar -->
+    <div class="icon-toolbar">
+        <button class="icon-btn" id="playBtn" title="Deploy options">▶️</button>
+        <button class="icon-btn" id="copyBtn" title="Copy with line numbers">📋</button>
+        <button class="icon-btn" id="infoBtn" title="Information" style="display: none;">ℹ️</button>
+        <button class="icon-btn" id="toggleCommentsBtn" title="Toggle comments" style="display: none;">💬</button>
+        <a href="https://shbash.netlify.app" target="_blank" class="icon-btn">
+            <img src="https://cdn.gitgpt.chat/rtx/images/bash.png" alt="ShBash"
+                style="width: 18px; display: block; border-radius: 4px;">
+        </a>
+        <a href="https://igiteam.github.io/sh_terminal" target="_blank" class="icon-btn">
+            <img src="https://cdn.gitgpt.chat/rtx/images/sh_terminal.png" alt="Sh Terminal"
+                style="width: 18px; display: block; border-radius: 4px;">
+        </a>
+        <a href="https://buymeacoffee.com/igiteam" target="_blank" class="icon-btn">
+            <img src="https://studio.buymeacoffee.com/assets/img/bmc-meta-new/new/apple-icon-120x120.png"
+                alt="Buy Me a Coffee" style="width: 18px; display: block; border-radius: 4px;">
+        </a>
+        <button class="icon-btn" id="downloadBtn" title="Download script">⬇️</button>
+        <button class="icon-btn" id="togglePanelBtn" title="Toggle Ai Diff+-">🤖</button>
+    </div>
+
+    <div id="loadingIndicator" class="loading-progress" style="display: none;">
+        <div>Loading large file...</div>
+        <div class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <div id="progressText">0%</div>
+    </div>
+
+    <!-- App Info Popup -->
+    <div class="popup-overlay" id="appInfoPopupOverlay">
+        <div class="popup-content" style="max-width: 450px;">
+            <div class="popup-header">
+                <span>ℹ️ About Sh</span>
+                <button class="icon-btn" onclick="toggleAppInfoPopup()"
+                    style="width: 32px; height: 32px; font-size: 16px;">✕</button>
+            </div>
+            <div class="popup-body">
+                <div class="popup-section">
+                    <h3>🎯 What is Sh?</h3>
+                    <p style="color: #cccccc; line-height: 1.6; margin-bottom: 15px;">
+                        A powerful tool for viewing, sharing, and collaborating on shell scripts with built-in comments
+                        and
+                        AI assistance.
+                    </p>
+                </div>
+
+                <div class="popup-section">
+                    <h3>✨ Key Features</h3>
+                    <ul style="color: #cccccc; list-style: none; padding: 0;">
+                        <li style="margin-bottom: 10px;">✓ <strong>Script Viewer</strong> - Load any .sh script via URL
+                        </li>
+                        <li style="margin-bottom: 10px;">✓ <strong>Comments System</strong> - Discuss scripts with
+                            Artalk
+                        </li>
+                        <li style="margin-bottom: 10px;">✓ <strong>AI Assistant</strong> - Get help and apply diffs</li>
+                        <li style="margin-bottom: 10px;">✓ <strong>Deploy Options</strong> - One-click cloud deployment
+                        </li>
+                        <li style="margin-bottom: 10px;">✓ <strong>Dark Mode</strong> - Easy on the eyes</li>
+                    </ul>
+                </div>
+
+                <div class="popup-section">
+                    <h3>🔧 How to Use</h3>
+                    <div
+                        style="background: #1e1e1e; padding: 12px; border-radius: 8px; color: #ce9178; font-family: monospace; margin-bottom: 10px;">
+                        ?url=https://example.com/script.sh
+                    </div>
+                    <p style="color: #cccccc;">Add <code
+                            style="background: #2d2d30; padding: 2px 6px; border-radius: 4px;">&e=1</code> to enable
+                        experimental features</p>
+                </div>
+
+                <div class="popup-section">
+                    <h3>📚 Links</h3>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <a href="https://github.com/igiteam/sh" target="_blank" class="deploy-btn"
+                            style="text-decoration: none; margin: 0; flex: 1;">
+                            <i class="fab fa-github"></i> GitHub
+                        </a>
+                        <a href="https://buymeacoffee.com/igiteam" target="_blank" class="deploy-btn"
+                            style="text-decoration: none; margin: 0; flex: 1; background: #FFDD00; color: #000;">
+                            <i class="fas fa-mug-hot"></i> Donate
+                        </a>
+                        <a href="https://igiteam.github.io/sh/" class="deploy-btn"
+                            style="text-decoration: none; margin: 0; flex: 1; background: #FFDD00; color: #000;">
+                            <img src="https://cdn.gitgpt.chat/rtx/images/bash.png" style="width: 16px;" /> SdBash
+                        </a>
+                    </div>
+                </div>
+
+                <div class="info-box" style="margin-top: 10px;">
+                    <i class="fas fa-heart" style="color: #ff6b6b;"></i>
+                    <strong>Version 1.0</strong> - Made with ❤️ by IGITeam
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Popup Overlay -->
+    <div class="popup-overlay" id="popupOverlay">
+        <div class="popup-content">
+            <div class="popup-header">
+                <span>🚀 Deploy Options</span>
+                <button class="icon-btn" onclick="togglePopup()"
+                    style="width: 32px; height: 32px; font-size: 16px;">✕</button>
+            </div>
+            <div class="popup-body">
+                <!-- Quick Terminal Command -->
+                <div class="popup-section">
+                    <h3>📋 Quick Terminal Command</h3>
+                    <div class="deploy-command">
+                        <code id="quickCommand"></code>
+                        <div class="copy-btn" onclick="copyQuickCommand()" title="Copy command">📋</div>
+                    </div>
+                </div>
+
+                <!-- Deployment Options -->
+                <div class="popup-section">
+                    <h3>☁️ Deploy to Cloud</h3>
+                    <div class="deploy-options">
+                        <button class="deploy-btn digitalocean" onclick="deployDigitalOcean()">
+                            <i class="fas fa-cloud"></i> DigitalOcean Droplet
+                        </button>
+                        <button class="deploy-btn" onclick="deployNetlify()">
+                            <i class="fas fa-globe"></i> Netlify
+                        </button>
+                    </div>
+
+                    <!-- DigitalOcean Python Script Info -->
+                    <div class="info-box" id="doInfo" style="display: none;">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>DigitalOcean Droplet Creator</strong><br>
+                        <p style="margin-top: 8px;">This will create a droplet with:</p>
+                        <ul style="margin-left: 20px; margin-top: 4px;">
+                            <li>Ubuntu 24.04</li>
+                            <li>1 vCPU, 1GB RAM</li>
+                            <li>Password: <code id="passwordDisplay">YourPassword1234!abc</code></li>
+                            <li>Subdomain: <code id="subdomainDisplay"></code></li>
+                        </ul>
+                        <p style="margin-top: 12px;">The Python script will:</p>
+                        <ol style="margin-left: 20px; margin-top: 4px;">
+                            <li>Create droplet with random ID</li>
+                            <li>Set up DNS A record</li>
+                            <li>Open terminal in browser</li>
+                        </ol>
+                        <button class="deploy-btn digitalocean" onclick="runDigitalOceanScript()"
+                            style="margin-top: 16px; width: 100%;">
+                            <i class="fas fa-play"></i> Run Droplet Creator
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Info about deployment -->
+                <div class="info-box">
+                    <i class="fas fa-lightbulb"></i>
+                    <strong>Quick Deploy Tips:</strong>
+                    <ul style="margin-left: 20px; margin-top: 4px;">
+                        <li>Use the terminal command for any Linux/Unix system</li>
+                        <li>DigitalOcean option creates a fresh VM with this script</li>
+                        <li>Netlify option is for static site deployment</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Highlight.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/vs2015.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+
+    <!-- Artalk -->
+    <link href="https://unpkg.com/artalk@2.8.6/dist/Artalk.css" rel="stylesheet">
+    <script src="https://unpkg.com/artalk@2.8.6/dist/Artalk.js"></script>
+
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const scriptUrl = urlParams.get('url') || 'https://cdn.gitgpt.chat/rtx/winejs.sh';
+        const enablePanel = urlParams.get('e') === '1' || !urlParams.has('url');
+        const currentUrl = window.location.href;
+
+        let currentLineCount = 0;
+        let originalScript = '';
+        let scriptLines = [];
+        let isLoading = false;
+        let artalkInstance = null;
+
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const commentsContainer = document.getElementById('commentsContainer');
+        const toggleCommentsBtn = document.getElementById('toggleCommentsBtn');
+        const playBtn = document.getElementById('playBtn');
+        const popupOverlay = document.getElementById('popupOverlay');
+        const resizer = document.getElementById('resizer');
+        const doInfo = document.getElementById('doInfo');
+        const subdomainDisplay = document.getElementById('subdomainDisplay');
+        const quickCommand = document.getElementById('quickCommand');
+        const passwordDisplay = document.getElementById('passwordDisplay');
+
+        // Set subdomain and command based on current script
+        let scriptName = 'script';
+        if (scriptUrl) {
+            const urlParts = scriptUrl.split('/');
+            const fullName = urlParts.pop() || 'script.sh';
+            scriptName = fullName.replace('.sh', '');
+        }
+
+        // Set dynamic page title
+        document.title = !urlParams.has('url') ? 'Sh' : `${scriptName}.sh`;
+
+        // Update displays
+        subdomainDisplay.textContent = `${scriptName}.yourdomain.com`;
+
+        // Set quick command
+        if (scriptUrl) {
+            quickCommand.textContent = `curl -o "${scriptName}.sh" "${scriptUrl}" && chmod +x "${scriptName}.sh" && sudo ./"${scriptName}.sh"`;
+        } else {
+            quickCommand.textContent = '# No script selected';
+        }
+
+        // Resizer variables
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+
+        // Show comments button if &e=1 is present OR if we're on the main domain without any script
+        if (currentUrl.includes('&e=1') || currentUrl.includes('?e=1') || !urlParams.has('url')) {
+            toggleCommentsBtn.style.display = 'flex';
+        }
+
+        // Show play button only if there's a script URL
+        if (currentUrl.includes('&e=1') || currentUrl.includes('?e=1') || !urlParams.has('url')) {
+            playBtn.style.display = 'flex';
+        } else {
+            playBtn.style.display = 'none';
+        }
+
+        // Info button visibility
+        const infoBtn = document.getElementById('infoBtn');
+        if (currentUrl.includes('&e=1') || currentUrl.includes('?e=1') || !urlParams.has('url')) {
+            infoBtn.style.display = 'flex';
+        } else {
+            infoBtn.style.display = 'none';
+        }
+
+
+        if (enablePanel) {
+            initializePanel();
+        } else {
+            document.getElementById('togglePanelBtn').style.display = 'none';
+        }
+
+        // Resizer functionality
+        resizer.addEventListener('mousedown', initResize);
+        resizer.addEventListener('touchstart', initResize);
+
+        function initResize(e) {
+            e.preventDefault();
+            isResizing = true;
+            startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
+            startHeight = commentsContainer.offsetHeight;
+
+            document.addEventListener('mousemove', resize);
+            document.addEventListener('touchmove', resize);
+            document.addEventListener('mouseup', stopResize);
+            document.addEventListener('touchend', stopResize);
+
+            // Add cursor style
+            document.body.style.cursor = 'row-resize';
+        }
+
+        function resize(e) {
+            if (!isResizing) return;
+
+            const currentY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
+            const deltaY = startY - currentY; // Invert so dragging down increases height
+            const newHeight = Math.min(
+                Math.max(startHeight + deltaY, 100),
+                window.innerHeight * 0.8
+            );
+
+            commentsContainer.style.flex = `0 0 ${newHeight}px`;
+        }
+
+        function stopResize() {
+            isResizing = false;
+            document.removeEventListener('mousemove', resize);
+            document.removeEventListener('touchmove', resize);
+            document.removeEventListener('mouseup', stopResize);
+            document.removeEventListener('touchend', stopResize);
+            document.body.style.cursor = '';
+        }
+
+        function toggleComments() {
+            if (commentsContainer.classList.contains('hidden')) {
+                commentsContainer.classList.remove('hidden');
+                toggleCommentsBtn.classList.add('active');
+
+                // Initialize Artalk if not already done
+                if (!artalkInstance) {
+                    initArtalk();
+                }
+            } else {
+                commentsContainer.classList.add('hidden');
+                toggleCommentsBtn.classList.remove('active');
+            }
+        }
+
+        function initArtalk() {
+            const pageKey = window.location.href;
+            artalkInstance = Artalk.init({
+                el: '#comments',
+                pageKey: pageKey,
+                pageTitle: document.title || 'SH Script',
+                server: 'https://artalk.gitgpt.chat',
+                site: 'Sh',
+                placeholder: 'Leave a comment...',
+                noComment: 'No comments yet',
+                sendBtn: 'Send',
+                darkMode: true,
+                height: 'auto'
+            });
+        }
+
+        function initializePanel() {
+            const panel = document.getElementById('rightPanel');
+            panel.innerHTML = `
+                <div class="panel-header">
+                    <span style="padding-left: 14px">
+                        <svg width="13px" height="16px" viewBox="0 0 13 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                            <title>diff</title>
+                            <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+                                <g id="diff_2" fill="#FFFFFF80" fill-rule="nonzero">
+                                    <path d="M12.396875,4.33125 L8.059375,0.159375 C7.953125,0.05625 7.8125,0 7.6625,0 L2.43125,0 C2.353125,0 2.2875,0.065625 2.2875,0.14375 L2.2875,1.14375 C2.2875,1.221875 2.353125,1.2875 2.43125,1.2875 L7.378125,1.2875 L11.2875,5.046875 L11.2875,13.571875 C11.2875,13.65 11.353125,13.715625 11.43125,13.715625 L12.43125,13.715625 C12.509375,13.715625 12.575,13.65 12.575,13.571875 L12.575,4.74375 C12.571875,4.5875 12.509375,4.440625 12.396875,4.33125 Z M7.028125,2.453125 C6.921875,2.346875 6.775,2.284375 6.625,2.284375 L0.571875,2.284375 C0.25625,2.284375 8.8817842e-16,2.540625 8.8817842e-16,2.85625 L8.8817842e-16,15.428125 C8.8817842e-16,15.74375 0.25625,16 0.571875,16 L9.715625,16 C10.03125,16 10.2875,15.74375 10.2875,15.428125 L10.2875,5.953125 C10.2875,5.8 10.228125,5.65625 10.11875,5.55 L7.028125,2.453125 Z M7.2875,12.303125 C7.2875,12.371875 7.228125,12.428125 7.153125,12.428125 L3.134375,12.428125 C3.0625,12.428125 3,12.371875 3,12.303125 L3,11.553125 C3,11.484375 3.059375,11.428125 3.134375,11.428125 L7.153125,11.428125 C7.225,11.428125 7.2875,11.484375 7.2875,11.553125 L7.2875,12.303125 Z M7.2875,8.375 C7.2875,8.44375 7.228125,8.5 7.153125,8.5 L5.64375,8.5 L5.64375,10.015625 C5.64375,10.084375 5.5875,10.14375 5.51875,10.14375 L4.76875,10.14375 C4.7,10.14375 4.64375,10.0875 4.64375,10.015625 L4.64375,8.5 L3.134375,8.5 C3.0625,8.5 3,8.44375 3,8.375 L3,7.625 C3,7.55625 3.059375,7.5 3.134375,7.5 L4.64375,7.5 L4.64375,5.984375 C4.64375,5.915625 4.7,5.85625 4.76875,5.85625 L5.51875,5.85625 C5.5875,5.85625 5.64375,5.9125 5.64375,5.984375 L5.64375,7.5 L7.153125,7.5 C7.225,7.5 7.2875,7.55625 7.2875,7.625 L7.2875,8.375 Z" id="diff"></path>
+                                </g>
+                            </g>
+                        </svg>
+                    </span>
+                    <button class="icon-btn" onclick="togglePanel()" style="width: 36px; height: 36px; font-size: 18px; background: #3e3e42;">✕</button>
+                </div>
+                <div class="panel-content">
+                    <div class="prompt-box" id="aiPrompt">Loading...</div>
+                    <button class="panel-btn" onclick="copyPrompt()">Copy Prompt</button>
+                    
+                    <div style="margin: 25px 0 10px; display: flex; align-items: center; gap: 15px; color: #9cdcfe; font-weight: 500;">
+                        <span>Apply AI Diff</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <a href="https://addons.mozilla.org/en-GB/firefox/addon/deepseek-in-sidebar/" target="_blank" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none;">
+                                <img src="https://addons.mozilla.org/user-media/addon_icons/2942/2942544-64.png?modified=94fdaa18" width="16" height="16" style="border-radius: 4px;" alt="DeepSeek in Sidebar" title="DeepSeek in Sidebar">
+                            </a>
+                            <a href="https://addons.mozilla.org/en-GB/firefox/addon/chatgpt-in-sidebar/" target="_blank" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none;">
+                                <img src="https://addons.mozilla.org/user-media/addon_icons/2824/2824957-64.png?modified=ccf4851f" width="16" height="16" style="border-radius: 4px;" alt="ChatGPT in Sidebar" title="ChatGPT in Sidebar">
+                            </a>
+                        </div>
+                    </div>
+
+                    <textarea id="diffInput" class="diff-area" placeholder="Paste AI's diff response..."></textarea>
+                    
+                    <button class="panel-btn" onclick="applyDiff()">Apply Diff</button>
+                    <button class="panel-btn" onclick="downloadModified()">Download Modified</button>
+                </div>
+            `;
+        }
+
+        function togglePanel() {
+            const panel = document.getElementById('rightPanel');
+            const toggleBtn = document.getElementById('togglePanelBtn');
+
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                toggleBtn.classList.add('active');
+            } else {
+                panel.classList.add('hidden');
+                toggleBtn.classList.remove('active');
+            }
+        }
+
+        // Popup functions
+        function togglePopup() {
+            if (popupOverlay.classList.contains('active')) {
+                popupOverlay.classList.remove('active');
+                playBtn.classList.remove('play-active');
+            } else {
+                popupOverlay.classList.add('active');
+                playBtn.classList.add('play-active');
+            }
+        }
+
+        function copyQuickCommand() {
+            const command = quickCommand.textContent;
+            navigator.clipboard.writeText(command).then(() => {
+                showToast('📋 Command copied to clipboard');
+            });
+        }
+
+        // App Info Popup functions
+        function toggleAppInfoPopup() {
+            const infoPopup = document.getElementById('appInfoPopupOverlay');
+            const infoBtn = document.getElementById('infoBtn');
+            if (infoPopup.classList.contains('active')) {
+                infoPopup.classList.remove('active');
+                infoBtn.classList.remove('active');
+            } else {
+                infoPopup.classList.add('active');
+                infoBtn.classList.add('active');
+            }
+        }
+
+        // Add event listener for app info button
+        document.getElementById('infoBtn').addEventListener('click', toggleAppInfoPopup);
+
+        // Close popup when clicking overlay
+        document.getElementById('appInfoPopupOverlay').addEventListener('click', function (e) {
+            if (e.target === this) {
+                toggleAppInfoPopup();
+            }
+        });
+
+        // Close popup with Escape key
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                const infoPopup = document.getElementById('appInfoPopupOverlay');
+                if (infoPopup.classList.contains('active')) {
+                    toggleAppInfoPopup();
+                }
+            }
+        });
+
+        function deployDigitalOcean() {
+            doInfo.style.display = 'block';
+            // Scroll to the info
+            doInfo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function deployNetlify() {
+            showToast('🌐 Netlify deployment coming soon!');
+        }
+
+        function runDigitalOceanScript() {
+            showToast('🚀 Opening DigitalOcean droplet creator...');
+
+            // For demo, open DigitalOcean console
+            setTimeout(() => {
+                window.open('https://cloud.digitalocean.com/droplets/new', '_blank');
+                showToast('✅ Opened DigitalOcean console');
+            }, 1000);
+        }
+
+        function copyScript() {
+            const lines = document.querySelectorAll('.script-line');
+            let scriptText = '';
+
+            lines.forEach(line => {
+                const lineNum = line.querySelector('.line-number');
+                const lineContent = line.querySelector('.line-content');
+                const codeEl = lineContent.querySelector('code');
+                scriptText += `${lineNum.textContent.trim()} ${codeEl ? codeEl.textContent : lineContent.textContent}\n`;
+            });
+
+            scriptText += `\n\n# === Sh AUTO INSTRUCTION ===
+# This script was viewed in Sh (https://igiteam.github.io/sh)
+# When asking AI to modify this script:
+# 1. Share only the DIFF (unified format) of changes needed
+# 2. Include line numbers from the original
+# 3. The diff should show exactly what to add/remove/modify
+# 4. Use format: @@ -start,count +start,count @@
+# 
+# Example diff format:
+# @@ -10,3 +10,4 @@
+#  # Original line
+# +New line after
+# -Line to remove
+# 
+# This allows the Sh tool to automatically apply your changes!`;
+
+            navigator.clipboard.writeText(scriptText).then(() => {
+                showToast('📋 Copied + AI instructions');
+            });
+        }
+
+        function downloadScript() {
+            let scriptContent = '';
+
+            if (scriptLines.length > 0) {
+                scriptContent = scriptLines.join('\n');
+            } else {
+                const lines = document.querySelectorAll('.script-line');
+                lines.forEach(line => {
+                    const lineContent = line.querySelector('.line-content');
+                    const codeEl = lineContent.querySelector('code');
+                    scriptContent += (codeEl ? codeEl.textContent : lineContent.textContent) + '\n';
+                });
+            }
+
+            const blob = new Blob([scriptContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = scriptUrl.split('/').pop() || 'script.sh';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('⬇️ Downloaded');
+        }
+
+        function copyPrompt() {
+            const promptEl = document.getElementById('aiPrompt');
+            navigator.clipboard.writeText(promptEl.textContent).then(() => {
+                showToast('📋 Prompt copied');
+            });
+        }
+
+        function applyDiff() {
+            const diffText = document.getElementById('diffInput').value;
+            if (!diffText) {
+                showToast('❌ No diff provided');
+                return;
+            }
+
+            try {
+                const lines = scriptLines;
+                const newLines = [...lines];
+                const diffLines = diffText.split('\n');
+
+                let currentLine = -1;
+
+                for (let i = 0; i < diffLines.length; i++) {
+                    const line = diffLines[i];
+
+                    if (line.startsWith('@@')) {
+                        const match = line.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+                        if (match) {
+                            currentLine = parseInt(match[3]) - 1;
+                        }
+                        continue;
+                    }
+
+                    if (currentLine >= 0) {
+                        if (line.startsWith('+')) {
+                            newLines.splice(currentLine, 0, line.substring(1));
+                            currentLine++;
+                        } else if (line.startsWith('-')) {
+                            newLines.splice(currentLine, 1);
+                        } else if (!line.startsWith('\\')) {
+                            currentLine++;
+                        }
+                    }
+                }
+
+                scriptLines = newLines;
+                originalScript = newLines.join('\n');
+
+                renderScript();
+                showToast('✅ Diff applied successfully');
+
+            } catch (e) {
+                console.error('Diff apply error:', e);
+                showToast('❌ Failed to apply diff');
+            }
+        }
+
+        function downloadModified() {
+            downloadScript();
+        }
+
+        function showToast(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        async function loadScript() {
+            if (!scriptUrl) {
+                document.getElementById('script-container').innerHTML =
+                    '<div style="color: #888; padding: 40px; text-align: center;">🔍 No script selected. Add ?url= to view a script.</div>';
+                return;
+            }
+
+            try {
+                // Add cache buster to URL
+                const cacheBuster = `&_=${Date.now()}`;
+                const urlWithCache = scriptUrl.includes('?')
+                    ? `${scriptUrl}${cacheBuster}`
+                    : `${scriptUrl}?${cacheBuster}`;
+
+                const response = await fetch(urlWithCache);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const contentLength = response.headers.get('content-length');
+
+                if (contentLength && parseInt(contentLength) > 5 * 1024 * 1024) {
+                    await loadLargeFile(response);
+                } else {
+                    const data = await response.text();
+                    scriptLines = data.replace(/\r\n/g, '\n').split('\n');
+                    originalScript = data;
+                    renderScript();
+                }
+
+            } catch (error) {
+                document.getElementById('script-container').innerHTML =
+                    '<div style="color: #f85149; padding: 20px;">❌ Error: ' + error.message + '</div>';
+            }
+        }
+
+        async function loadLargeFile(response) {
+            loadingIndicator.style.display = 'block';
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            let receivedLength = 0;
+            let chunks = [];
+            const contentLength = response.headers.get('content-length');
+
+            while (true) {
+                const { done, value } = await reader.read();
+
+                if (done) break;
+
+                chunks.push(value);
+                receivedLength += value.length;
+
+                if (contentLength) {
+                    const percent = (receivedLength / parseInt(contentLength)) * 100;
+                    progressFill.style.width = percent + '%';
+                    progressText.textContent = Math.round(percent) + '%';
+                }
+            }
+
+            const allData = new Uint8Array(receivedLength);
+            let position = 0;
+            for (let chunk of chunks) {
+                allData.set(chunk, position);
+                position += chunk.length;
+            }
+
+            const text = decoder.decode(allData);
+            scriptLines = text.replace(/\r\n/g, '\n').split('\n');
+            originalScript = text;
+
+            loadingIndicator.style.display = 'none';
+            renderScript();
+        }
+
+        function renderScript() {
+            const container = document.getElementById('script-container');
+            container.innerHTML = '';
+
+            currentLineCount = scriptLines.length;
+
+            if (enablePanel) {
+                const promptEl = document.getElementById('aiPrompt');
+                if (promptEl) {
+                    promptEl.innerHTML = `Explain this bash script in a nutshell.
+If I want to modify it, show me only the differences (diff format).
+Include line numbers from the original.
+
+Original script has ${currentLineCount} lines.
+
+When you respond, ONLY output the diff in unified format.
+The diff will be automatically applied by Sh.`;
+                }
+            }
+
+            const fragment = document.createDocumentFragment();
+
+            scriptLines.forEach((line, index) => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'script-line';
+
+                const lineNum = document.createElement('span');
+                lineNum.className = 'line-number';
+                lineNum.textContent = (index + 1).toString();
+                lineDiv.appendChild(lineNum);
+
+                const contentSpan = document.createElement('span');
+                contentSpan.className = 'line-content';
+
+                const code = document.createElement('code');
+                code.className = 'language-bash';
+                code.textContent = line || ' ';
+
+                contentSpan.appendChild(code);
+                lineDiv.appendChild(contentSpan);
+                fragment.appendChild(lineDiv);
+            });
+
+            container.appendChild(fragment);
+
+            if (scriptLines.length > 10000) {
+                highlightInChunks();
+            } else {
+                document.querySelectorAll('code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
+        }
+
+        function highlightInChunks() {
+            const codes = document.querySelectorAll('code');
+            const chunkSize = 1000;
+            let index = 0;
+
+            function processChunk() {
+                const end = Math.min(index + chunkSize, codes.length);
+                for (let i = index; i < end; i++) {
+                    hljs.highlightElement(codes[i]);
+                }
+                index = end;
+
+                if (index < codes.length) {
+                    setTimeout(processChunk, 10);
+                }
+            }
+
+            setTimeout(processChunk, 10);
+        }
+
+        // Event listeners
+        document.getElementById('downloadBtn').addEventListener('click', downloadScript);
+        document.getElementById('copyBtn').addEventListener('click', copyScript);
+        document.getElementById('togglePanelBtn').addEventListener('click', togglePanel);
+        if (toggleCommentsBtn) toggleCommentsBtn.addEventListener('click', toggleComments);
+        if (playBtn) playBtn.addEventListener('click', togglePopup);
+
+        // Close popup when clicking overlay (but not content)
+        popupOverlay.addEventListener('click', function (e) {
+            if (e.target === popupOverlay) {
+                togglePopup();
+            }
+        });
+
+        // Start loading
+        loadScript();
+    </script>
+</body>
+
+</html>
