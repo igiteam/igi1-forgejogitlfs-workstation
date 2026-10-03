@@ -5,7 +5,9 @@
 # including gitlinks, .gitmodules entries, and nested .git files.
 #
 
-set -uo pipefail
+set -o pipefail
+# NOTE: we intentionally do NOT use `set -u` because macOS ships bash 3.2,
+# which treats empty/unset array expansions under `set -u` as fatal errors.
 
 # ---------- Colors ----------
 RED='\033[0;31m'
@@ -82,8 +84,7 @@ else
 fi
 
 # ---------- Step 3: Recursive search ----------
-# Look for both .git directories AND .git files (worktrees / submodules).
-declare -a NESTED_REPOS=()
+NESTED_REPOS=()
 
 while IFS= read -r gitpath; do
     dirpath=$(dirname "$gitpath")
@@ -103,49 +104,54 @@ while IFS= read -r gitpath; do
 done < <(find . \( -name ".git" -type d -o -name ".git" -type f \) 2>/dev/null | sort -u)
 
 # ---------- Step 3b: Find gitlink entries in the index ----------
-# Gitlinks have mode 160000 — that's the real "link to a repo" in the parent.
-declare -a GITLINK_PATHS=()
+GITLINK_PATHS=()
 while IFS= read -r line; do
     [ -z "$line" ] && continue
     mode=$(echo "$line" | awk '{print $1}')
-    path=$(echo "$line" | awk '{print $4}')
     if [ "$mode" = "160000" ]; then
+        # Path is everything after "mode <sha> <stage>\t"
+        path=$(echo "$line" | sed -E 's/^[0-9]+ [0-9a-f]+ [0-9]+\t//')
         GITLINK_PATHS+=("$path")
     fi
 done < <(git ls-files --stage)
 
-if [ ${#NESTED_REPOS[@]} -eq 0 ] && [ ${#GITLINK_PATHS[@]} -eq 0 ] && [ ! -f .gitmodules ]; then
+nested_count=${#NESTED_REPOS[@]:-0}
+gitlink_count=${#GITLINK_PATHS[@]:-0}
+
+if [ "$nested_count" -eq 0 ] && [ "$gitlink_count" -eq 0 ] && [ ! -f .gitmodules ]; then
     success "No nested repositories, gitlinks, or .gitmodules found. Nothing to do."
     exit 0
 fi
 
 # ---------- Step 4: Analysis & reporting ----------
-if [ ${#NESTED_REPOS[@]} -gt 0 ]; then
-    info "Found ${#NESTED_REPOS[@]} nested repo(s):"
+if [ "$nested_count" -gt 0 ]; then
+    info "Found $nested_count nested repo(s):"
 fi
 
-for dirpath in "${NESTED_REPOS[@]}"; do
+for dirpath in "${NESTED_REPOS[@]:-}"; do
+    [ -z "$dirpath" ] && continue
     echo ""
     echo "Found nested repo: $dirpath"
 
     lfs_files=0
     if $LFS_AVAILABLE; then
         lfs_files=$(find "$dirpath" -type f -not -path "*/.git/*" \
-            -exec grep -lI "version https://git-lfs" {} \; 2>/dev/null | wc -l)
+            -exec grep -lI "version https://git-lfs" {} \; 2>/dev/null | wc -l | tr -d ' ')
     fi
 
-    file_count=$(find "$dirpath" -type f -not -path "*/.git/*" 2>/dev/null | wc -l)
+    file_count=$(find "$dirpath" -type f -not -path "*/.git/*" 2>/dev/null | wc -l | tr -d ' ')
 
-    if [ "$lfs_files" -gt 0 ]; then
+    if [ "${lfs_files:-0}" -gt 0 ]; then
         warn "Contains $lfs_files Git LFS pointer file(s)"
     fi
     info "Contains $file_count file(s)"
 done
 
-if [ ${#GITLINK_PATHS[@]} -gt 0 ]; then
+if [ "$gitlink_count" -gt 0 ]; then
     echo ""
     warn "Gitlink entries in index (mode 160000):"
-    for p in "${GITLINK_PATHS[@]}"; do
+    for p in "${GITLINK_PATHS[@]:-}"; do
+        [ -z "$p" ] && continue
         echo "  - $p"
     done
 fi
@@ -153,7 +159,7 @@ fi
 if [ -f .gitmodules ]; then
     echo ""
     warn ".gitmodules file present — its entries will also be cleaned:"
-    grep -E '^\s*(path|url)\s*=' .gitmodules || true
+    grep -E '^[[:space:]]*(path|url)[[:space:]]*=' .gitmodules 2>/dev/null || true
 fi
 
 echo ""
@@ -170,7 +176,7 @@ fi
 # ---------- Step 5: Automatic cleanup ----------
 fixed_count=0
 
-# 5a. Remove gitlink entries from the index (this is what keeps the "link")
+# 5a. Remove gitlink entries from the index
 for p in "${GITLINK_PATHS[@]:-}"; do
     [ -z "$p" ] && continue
     if git rm --cached -r --ignore-unmatch "$p" > /dev/null 2>&1; then
@@ -178,8 +184,9 @@ for p in "${GITLINK_PATHS[@]:-}"; do
     fi
 done
 
-# 5b. Remove nested .git (dir or file) and .gitignore, then re-add
-for dirpath in "${NESTED_REPOS[@]}"; do
+# 5b. Remove nested .git (dir or file), .gitignore, then re-add contents
+for dirpath in "${NESTED_REPOS[@]:-}"; do
+    [ -z "$dirpath" ] && continue
     gitdir="$dirpath/.git"
 
     if [ -d "$gitdir" ]; then
@@ -193,8 +200,6 @@ for dirpath in "${NESTED_REPOS[@]}"; do
 
     rm -f "$dirpath/.gitignore"
 
-    # In case the nested dir was a gitlink, drop it from the index first,
-    # then re-add the actual file contents.
     git rm --cached -r --ignore-unmatch "$dirpath" > /dev/null 2>&1 || true
     git add -A "$dirpath" > /dev/null 2>&1
 
@@ -202,27 +207,28 @@ for dirpath in "${NESTED_REPOS[@]}"; do
     success "Removed .git from $dirpath"
 done
 
-# 5c. Clean up .gitmodules if it still references removed paths
+# 5c. Clean up .gitmodules if it no longer references real submodules
 if [ -f .gitmodules ]; then
-    if [ ${#GITLINK_PATHS[@]} -gt 0 ] || [ ${#NESTED_REPOS[@]} -gt 0 ]; then
-        # If no submodule entries remain, delete the file; otherwise leave it.
-        remaining=$(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null \
-            | awk '{print $2}' \
-            | while read -r sp; do
-                [ -d "$sp/.git" ] || [ -f "$sp/.git" ] && echo "$sp"
-              done)
-        if [ -z "$remaining" ]; then
-            git rm -f .gitmodules > /dev/null 2>&1 && success "Removed .gitmodules"
-        else
-            warn ".gitmodules still references active submodules — left in place"
+    remaining=""
+    while IFS= read -r sp; do
+        [ -z "$sp" ] && continue
+        if [ -d "$sp/.git" ] || [ -f "$sp/.git" ]; then
+            remaining="$sp"
+            break
         fi
+    done < <(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null | awk '{print $2}')
+
+    if [ -z "$remaining" ]; then
+        git rm -f .gitmodules > /dev/null 2>&1 && success "Removed .gitmodules"
+    else
+        warn ".gitmodules still references active submodules — left in place"
     fi
 fi
 
 # ---------- Step 6: Commit & push ----------
 echo ""
 echo "=== Summary ==="
-echo "Found ${#NESTED_REPOS[@]} nested repositories"
+echo "Found $nested_count nested repositories"
 echo "Fixed $fixed_count nested repositories"
 
 echo ""
@@ -239,7 +245,8 @@ if ! confirm "Commit the changes?"; then
     exit 0
 fi
 
-git commit -m "Fix nested repositories: removed $fixed_count nested .git folders and cleaned gitlinks"
+git commit -m "Fix nested repositories: removed $fixed_count nested .git folders and cleaned gitlinks" \
+    || { warn "Nothing to commit."; exit 0; }
 
 success "Changes committed"
 
