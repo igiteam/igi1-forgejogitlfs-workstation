@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # github_remove_nested.sh
-# Finds and fixes nested Git repositories within the main repository.
+# Finds and fixes nested Git repositories within the main repository,
+# including gitlinks, .gitmodules entries, and nested .git files.
 #
 
 set -uo pipefail
@@ -11,7 +12,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 info()    { echo -e "${BLUE}ℹ${NC} $*"; }
 success() { echo -e "${GREEN}✓${NC} $*"; }
@@ -28,7 +29,8 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Finds and removes nested .git folders inside the current Git repository.
+Finds and removes nested .git folders, gitlink entries, and .gitmodules
+entries inside the current Git repository.
 
 Options:
   -y, --yes         Skip confirmation prompts (auto-confirm)
@@ -53,9 +55,7 @@ done
 
 confirm() {
     local prompt="$1"
-    if $AUTO_YES; then
-        return 0
-    fi
+    if $AUTO_YES; then return 0; fi
     read -r -p "$prompt [y/N] " reply
     [[ "$reply" =~ ^[Yy]$ ]]
 }
@@ -82,12 +82,12 @@ else
 fi
 
 # ---------- Step 3: Recursive search ----------
+# Look for both .git directories AND .git files (worktrees / submodules).
 declare -a NESTED_REPOS=()
 
-while IFS= read -r gitdir; do
-    dirpath=$(dirname "$gitdir")
+while IFS= read -r gitpath; do
+    dirpath=$(dirname "$gitpath")
 
-    # Skip main repo .git and excluded paths
     if [ "$dirpath" = "." ] \
        || [[ "$dirpath" == *"/.git/"* ]] \
        || [[ "$dirpath" == *"/node_modules/"* ]] \
@@ -100,16 +100,30 @@ while IFS= read -r gitdir; do
     fi
 
     NESTED_REPOS+=("$dirpath")
-done < <(find . -name ".git" -type d 2>/dev/null | sort)
+done < <(find . \( -name ".git" -type d -o -name ".git" -type f \) 2>/dev/null | sort -u)
 
-if [ ${#NESTED_REPOS[@]} -eq 0 ]; then
-    success "No nested repositories found. Nothing to do."
+# ---------- Step 3b: Find gitlink entries in the index ----------
+# Gitlinks have mode 160000 — that's the real "link to a repo" in the parent.
+declare -a GITLINK_PATHS=()
+while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    mode=$(echo "$line" | awk '{print $1}')
+    path=$(echo "$line" | awk '{print $4}')
+    if [ "$mode" = "160000" ]; then
+        GITLINK_PATHS+=("$path")
+    fi
+done < <(git ls-files --stage)
+
+if [ ${#NESTED_REPOS[@]} -eq 0 ] && [ ${#GITLINK_PATHS[@]} -eq 0 ] && [ ! -f .gitmodules ]; then
+    success "No nested repositories, gitlinks, or .gitmodules found. Nothing to do."
     exit 0
 fi
 
-info "Found ${#NESTED_REPOS[@]} nested repo(s):"
-
 # ---------- Step 4: Analysis & reporting ----------
+if [ ${#NESTED_REPOS[@]} -gt 0 ]; then
+    info "Found ${#NESTED_REPOS[@]} nested repo(s):"
+fi
+
 for dirpath in "${NESTED_REPOS[@]}"; do
     echo ""
     echo "Found nested repo: $dirpath"
@@ -128,8 +142,22 @@ for dirpath in "${NESTED_REPOS[@]}"; do
     info "Contains $file_count file(s)"
 done
 
+if [ ${#GITLINK_PATHS[@]} -gt 0 ]; then
+    echo ""
+    warn "Gitlink entries in index (mode 160000):"
+    for p in "${GITLINK_PATHS[@]}"; do
+        echo "  - $p"
+    done
+fi
+
+if [ -f .gitmodules ]; then
+    echo ""
+    warn ".gitmodules file present — its entries will also be cleaned:"
+    grep -E '^\s*(path|url)\s*=' .gitmodules || true
+fi
+
 echo ""
-if ! confirm "Proceed with removing nested .git folders?"; then
+if ! confirm "Proceed with removing nested .git folders, gitlinks, and .gitmodules?"; then
     info "Aborted by user."
     exit 0
 fi
@@ -142,22 +170,54 @@ fi
 # ---------- Step 5: Automatic cleanup ----------
 fixed_count=0
 
+# 5a. Remove gitlink entries from the index (this is what keeps the "link")
+for p in "${GITLINK_PATHS[@]:-}"; do
+    [ -z "$p" ] && continue
+    if git rm --cached -r --ignore-unmatch "$p" > /dev/null 2>&1; then
+        success "Removed gitlink from index: $p"
+    fi
+done
+
+# 5b. Remove nested .git (dir or file) and .gitignore, then re-add
 for dirpath in "${NESTED_REPOS[@]}"; do
     gitdir="$dirpath/.git"
 
-    if [ ! -d "$gitdir" ]; then
-        warn "Skipping $dirpath (already removed)"
+    if [ -d "$gitdir" ]; then
+        rm -rf "$gitdir"
+    elif [ -f "$gitdir" ]; then
+        rm -f "$gitdir"
+    else
+        warn "Skipping $dirpath (no .git found)"
         continue
     fi
 
-    rm -rf "$gitdir"
     rm -f "$dirpath/.gitignore"
 
+    # In case the nested dir was a gitlink, drop it from the index first,
+    # then re-add the actual file contents.
+    git rm --cached -r --ignore-unmatch "$dirpath" > /dev/null 2>&1 || true
     git add -A "$dirpath" > /dev/null 2>&1
 
     fixed_count=$((fixed_count + 1))
-    success "Removed .git folder from $dirpath"
+    success "Removed .git from $dirpath"
 done
+
+# 5c. Clean up .gitmodules if it still references removed paths
+if [ -f .gitmodules ]; then
+    if [ ${#GITLINK_PATHS[@]} -gt 0 ] || [ ${#NESTED_REPOS[@]} -gt 0 ]; then
+        # If no submodule entries remain, delete the file; otherwise leave it.
+        remaining=$(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null \
+            | awk '{print $2}' \
+            | while read -r sp; do
+                [ -d "$sp/.git" ] || [ -f "$sp/.git" ] && echo "$sp"
+              done)
+        if [ -z "$remaining" ]; then
+            git rm -f .gitmodules > /dev/null 2>&1 && success "Removed .gitmodules"
+        else
+            warn ".gitmodules still references active submodules — left in place"
+        fi
+    fi
+fi
 
 # ---------- Step 6: Commit & push ----------
 echo ""
@@ -169,11 +229,6 @@ echo ""
 echo "=== Current status ==="
 git status --short
 
-if [ "$fixed_count" -eq 0 ]; then
-    warn "No repositories were fixed."
-    exit 0
-fi
-
 if $NO_COMMIT; then
     info "Skipping commit (--no-commit). Review the staged changes above."
     exit 0
@@ -184,7 +239,8 @@ if ! confirm "Commit the changes?"; then
     exit 0
 fi
 
-git commit -m "Fix nested repositories: removed $fixed_count nested .git folders"
+git commit -m "Fix nested repositories: removed $fixed_count nested .git folders and cleaned gitlinks"
+
 success "Changes committed"
 
 if $NO_PUSH; then
