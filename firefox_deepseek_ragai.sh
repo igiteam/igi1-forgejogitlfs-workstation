@@ -1,9 +1,8 @@
 #!/bin/bash
 
 # ===============================================
-# OFP ~ IGI ~ LLM Workspace — Firefox Extension Generator v2.2
-# Two-header three-panel workstation with URL persistence
-# + per-service AI URL memory
+# OFP ~ IGI ~ LLM Workspace — Firefox Extension Generator v2.3
+# Two-header three-panel workstation + Knowledge Base upload
 # ===============================================
 
 RED='\033[0;31m'
@@ -15,7 +14,7 @@ NC='\033[0m'
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════════════╗"
 echo "║        OFP ~ IGI ~ LLM Workspace — Extension Generator        ║"
-echo "║     Two-header three-panel workstation v2.2                   ║"
+echo "║     Two-header three-panel workstation v2.3                   ║"
 echo "╚═══════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -59,14 +58,14 @@ fi
 cp icons/icon.png icons/icon128.png 2>/dev/null || true
 
 # ---------------------------------------------------------------
-# manifest.json
+# manifest.json — add contextMenus
 # ---------------------------------------------------------------
 cat << 'EOL' > manifest.json
 {
   "manifest_version": 2,
   "name": "OFP ~ IGI ~ LLM Workspace",
-  "version": "2.2.0",
-  "description": "Two-header three-panel remake workstation with per-panel URL persistence and per-service AI memory.",
+  "version": "2.3.0",
+  "description": "Two-header three-panel remake workstation with per-panel URL persistence, per-service AI memory, and knowledge base upload.",
   "icons": {
     "48": "icons/icon.png",
     "128": "icons/icon128.png"
@@ -77,6 +76,8 @@ cat << 'EOL' > manifest.json
     "webNavigation",
     "storage",
     "tabs",
+    "contextMenus",
+    "clipboardWrite",
     "<all_urls>"
   ],
   "browser_action": {
@@ -225,6 +226,40 @@ browser.webNavigation.onHistoryStateUpdated.addListener(relayNavigation);
 browser.webNavigation.onReferenceFragmentUpdated.addListener(relayNavigation);
 
 // =====================================================
+// Context menu → Send selected text to KB
+// =====================================================
+browser.contextMenus.create({
+  id: "send-to-kb",
+  title: "Send to knowledge base",
+  contexts: ["selection"]
+});
+
+browser.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== "send-to-kb") return;
+  const text = info.selectionText;
+  if (!text || !text.trim()) return;
+
+  // If the click came from inside the workspace, deliver directly.
+  if (tab && tab.url && tab.url.startsWith(WORKSPACE_URL)) {
+    browser.tabs.sendMessage(tab.id, {
+      type: "kb-fill",
+      text: text
+    }).catch(() => {});
+    return;
+  }
+
+  // Otherwise stash it and open/focus the workspace.
+  await browser.storage.local.set({ kbPending: text });
+  const tabs = await browser.tabs.query({ url: WORKSPACE_URL });
+  if (tabs.length > 0) {
+    browser.tabs.update(tabs[0].id, { active: true });
+    browser.tabs.sendMessage(tabs[0].id, { type: "kb-fill", text }).catch(() => {});
+  } else {
+    browser.tabs.create({ url: WORKSPACE_URL });
+  }
+});
+
+// =====================================================
 // Toolbar button
 // =====================================================
 browser.browserAction.onClicked.addListener(async () => {
@@ -242,7 +277,7 @@ browser.runtime.onInstalled.addListener(() => {
 EOL
 
 # ---------------------------------------------------------------
-# workspace.html
+# workspace.html — middle panel now has KB toolbar
 # ---------------------------------------------------------------
 cat << 'EOL' > workspace.html
 <!doctype html>
@@ -277,7 +312,7 @@ cat << 'EOL' > workspace.html
 
   <div class="resizer" data-target="0"></div>
 
-  <!-- ============ PANEL 2: AI chat ============ -->
+  <!-- ============ PANEL 2: AI chat + KB toolbar ============ -->
   <div class="panel" id="panel-2" data-source="https://chat.deepseek.com">
     <div class="panel-header top-header">
       <select class="ai-select" id="ai-2" title="Change AI service">
@@ -293,9 +328,47 @@ cat << 'EOL' > workspace.html
              spellcheck="false" placeholder="Enter URL and press Enter...">
       <a class="open-btn" id="open-2" target="_blank" rel="noopener" title="Open in new tab">↗</a>
     </div>
-    <div class="panel-header bottom-header empty">
-      <span class="no-rag">— no RAG —</span>
+
+    <!-- KB toolbar replaces the old "— no RAG —" placeholder -->
+    <div class="panel-header kb-header">
+      <button class="kb-toggle" id="kb-toggle" title="Toggle knowledge base panel">📚 KB</button>
+      <span class="kb-status" id="kb-status">0 stored</span>
+      <button class="kb-action" id="kb-server-btn" title="Configure RAG server">⚙️</button>
+      <button class="kb-action" id="kb-list-btn" title="List stored docs">📋</button>
     </div>
+
+    <!-- Hidden by default; shown when KB toggle is on -->
+    <div class="kb-panel" id="kb-panel" style="display:none;">
+      <div class="kb-row">
+        <span class="kb-label">source</span>
+        <select id="kb-source" class="kb-select">
+          <option>DeepSeek</option>
+          <option>ChatGPT</option>
+          <option>Claude</option>
+          <option>Gemini</option>
+          <option>Mistral</option>
+          <option>Copilot</option>
+          <option>Perplexity</option>
+          <option>user</option>
+          <option>github</option>
+        </select>
+      </div>
+      <div class="kb-row">
+        <span class="kb-label">tags</span>
+        <input type="text" id="kb-tags" class="kb-input"
+               placeholder="igi→ofp, patrol, ..." spellcheck="false">
+      </div>
+      <textarea id="kb-text" class="kb-textarea"
+                placeholder="Paste AI reply here (or use right-click → Send to knowledge base)..."
+                spellcheck="false"></textarea>
+      <div class="kb-row kb-row-actions">
+        <button class="kb-upload" id="kb-upload">📥 Upload to KB</button>
+        <button class="kb-clear" id="kb-clear">Clear</button>
+      </div>
+      <div class="kb-result" id="kb-result"></div>
+      <div class="kb-list" id="kb-list"></div>
+    </div>
+
     <div class="iframe-container">
       <iframe id="iframe-2" referrerpolicy="no-referrer" loading="lazy"></iframe>
     </div>
@@ -329,7 +402,7 @@ cat << 'EOL' > workspace.html
 EOL
 
 # ---------------------------------------------------------------
-# workspace.css
+# workspace.css — add KB styles
 # ---------------------------------------------------------------
 cat << 'EOL' > workspace.css
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -493,17 +566,6 @@ body.resizing { cursor: col-resize; }
   font-size: 11px;
 }
 
-.bottom-header.empty {
-  justify-content: center;
-  color: #8b8b94;
-}
-
-.no-rag {
-  font-style: italic;
-  font-size: 11px;
-  color: #9a9aa3;
-}
-
 .rag-label {
   font-weight: 600;
   color: #15141a;
@@ -548,11 +610,216 @@ body.resizing { cursor: col-resize; }
 .mini-btn:hover { background: #eaeaf0; border-color: #c0c0c8; }
 .mini-btn:active { background: #d7d7db; }
 
+/* ============================================================
+   KNOWLEDGE BASE PANEL (middle panel)
+   ============================================================ */
+.kb-header {
+  background: #eef5ff;
+  color: #15141a;
+  padding: 0 8px;
+  border-bottom: 1px solid #d7e3f0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.kb-toggle {
+  background: #ffffff;
+  border: 1px solid #c7d8ee;
+  color: #0060df;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  height: 24px;
+  white-space: nowrap;
+}
+.kb-toggle:hover { background: #e0edff; }
+.kb-toggle.active { background: #0060df; color: #ffffff; border-color: #0060df; }
+
+.kb-status {
+  color: #5b5b66;
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-action {
+  background: #ffffff;
+  border: 1px solid #c7d8ee;
+  color: #15141a;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  height: 24px;
+  min-width: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.kb-action:hover { background: #e0edff; }
+
+.kb-panel {
+  background: #f7fafd;
+  border-bottom: 1px solid #d7e3f0;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.kb-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kb-row-actions { justify-content: flex-end; }
+
+.kb-label {
+  color: #5b5b66;
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  min-width: 46px;
+  flex-shrink: 0;
+}
+
+.kb-select {
+  flex: 1;
+  background: #ffffff;
+  border: 1px solid #c7d8ee;
+  color: #15141a;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.kb-input {
+  flex: 1;
+  background: #ffffff;
+  border: 1px solid #c7d8ee;
+  color: #15141a;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  height: 24px;
+}
+.kb-input:focus { outline: none; border-color: #0060df; }
+
+.kb-textarea {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #c7d8ee;
+  color: #15141a;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  resize: vertical;
+  min-height: 70px;
+  max-height: 160px;
+  line-height: 1.4;
+}
+.kb-textarea:focus { outline: none; border-color: #0060df; }
+
+.kb-upload {
+  background: #0060df;
+  border: 1px solid #004cb3;
+  color: #ffffff;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.kb-upload:hover { background: #004cb3; }
+.kb-upload:disabled { background: #a0b8d4; border-color: #a0b8d4; cursor: wait; }
+
+.kb-clear {
+  background: #ffffff;
+  border: 1px solid #c7d8ee;
+  color: #5b5b66;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.kb-clear:hover { background: #eef5ff; }
+
+.kb-result {
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  color: #5b5b66;
+  padding: 4px 0;
+  min-height: 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.kb-result.ok { color: #1f7a3d; }
+.kb-result.err { color: #b03a3a; }
+
+.kb-list {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 11px;
+  font-family: ui-monospace, Consolas, monospace;
+  color: #15141a;
+}
+.kb-list-item {
+  padding: 4px 6px;
+  border: 1px solid #e0e0e6;
+  border-radius: 3px;
+  margin-bottom: 3px;
+  background: #ffffff;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  align-items: center;
+}
+.kb-list-item .kb-li-meta {
+  color: #5b5b66;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kb-list-item .kb-li-del {
+  background: transparent;
+  border: none;
+  color: #b03a3a;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.kb-list-item .kb-li-del:hover { color: #d04646; }
+
+/* ============================================================
+   IFRAME
+   ============================================================ */
 .iframe-container {
   flex: 1;
   position: relative;
   background: #0f172a;
   overflow: hidden;
+  min-height: 0;
 }
 
 iframe {
@@ -570,26 +837,17 @@ EOL
 
 # ---------------------------------------------------------------
 # workspace.js
-# ================================================================
-# NOTE ON ORDERING:
-# Everything that is referenced by top-level code must be declared
-# BEFORE that code runs. This script is structured as:
-#   1. Config constants
-#   2. DOM element references (aiSelect, etc.)
-#   3. Helper functions (diag, hostOf, etc.)
-#   4. State (panelUrls, aiUrls)
-#   5. Persistence functions
-#   6. Event wiring
-#   7. Init (runs on DOMContentLoaded)
 # ---------------------------------------------------------------
 cat << 'EOL' > workspace.js
 // =====================================================
 // 1. Config
 // =====================================================
 const RAG_BASE = "https://rag.songdrop.band/?url=";
+const KB_SERVER_DEFAULT = "https://rag.songdrop.band";
 const STORAGE_KEY_PANEL_URLS = "panelUrls";
 const STORAGE_KEY_AI_URLS = "aiUrls";
 const STORAGE_KEY_LAYOUT = "layout";
+const STORAGE_KEY_KB_SERVER = "kbServer";
 
 const DEFAULT_URLS = {
   1: "https://github.com/BohemiaInteractive/CWR",
@@ -610,7 +868,7 @@ const AI_HOSTS = [
 ];
 
 // =====================================================
-// 2. DOM references (resolved once at script load)
+// 2. DOM references
 // =====================================================
 const aiSelect = document.getElementById("ai-2");
 const diagEl = document.getElementById("diag");
@@ -667,7 +925,8 @@ function matchUrlToPanel(url) {
 // 4. State
 // =====================================================
 let panelUrls = { ...DEFAULT_URLS };
-let aiUrls = {};  // hostname -> last URL for that service
+let aiUrls = {};
+let kbServer = KB_SERVER_DEFAULT;
 
 // =====================================================
 // 5. Persistence
@@ -677,7 +936,7 @@ async function loadSavedUrls() {
     const r = await browser.storage.local.get(STORAGE_KEY_PANEL_URLS);
     if (r[STORAGE_KEY_PANEL_URLS] && typeof r[STORAGE_KEY_PANEL_URLS] === "object") {
       panelUrls = { ...DEFAULT_URLS, ...r[STORAGE_KEY_PANEL_URLS] };
-      diag("loaded panelUrls: " + JSON.stringify(panelUrls));
+      diag("loaded panelUrls");
     }
   } catch (e) { diag("loadSavedUrls error: " + e.message); }
 }
@@ -687,9 +946,24 @@ async function loadAiUrls() {
     const r = await browser.storage.local.get(STORAGE_KEY_AI_URLS);
     if (r[STORAGE_KEY_AI_URLS] && typeof r[STORAGE_KEY_AI_URLS] === "object") {
       aiUrls = r[STORAGE_KEY_AI_URLS];
-      diag("loaded aiUrls: " + JSON.stringify(aiUrls));
+      diag("loaded aiUrls");
     }
   } catch (e) { diag("loadAiUrls error: " + e.message); }
+}
+
+async function loadKbServer() {
+  try {
+    const r = await browser.storage.local.get(STORAGE_KEY_KB_SERVER);
+    if (r[STORAGE_KEY_KB_SERVER]) {
+      kbServer = r[STORAGE_KEY_KB_SERVER];
+    }
+  } catch {}
+}
+
+async function saveKbServer() {
+  try {
+    await browser.storage.local.set({ [STORAGE_KEY_KB_SERVER]: kbServer });
+  } catch {}
 }
 
 let saveUrlTimer = null;
@@ -699,7 +973,6 @@ function saveUrlSoon() {
     saveUrlTimer = null;
     try {
       await browser.storage.local.set({ [STORAGE_KEY_PANEL_URLS]: panelUrls });
-      diag("saved panelUrls: " + JSON.stringify(panelUrls));
     } catch (e) { diag("save error: " + e.message); }
   }, 800);
 }
@@ -744,7 +1017,6 @@ function setPanelUrl(panelId, url, opts = {}) {
   const panel = document.getElementById("panel-" + panelId);
   if (panel) panel.dataset.source = url;
 
-  // If panel 2 navigated, record under its hostname too
   if (panelId === 2) {
     const h = hostOf(url);
     if (h) {
@@ -757,7 +1029,7 @@ function setPanelUrl(panelId, url, opts = {}) {
 }
 
 // =====================================================
-// 7. URL input wiring — type + Enter to load
+// 7. URL input wiring
 // =====================================================
 for (const p of PANELS) {
   const input = document.getElementById(p.navId);
@@ -774,24 +1046,20 @@ for (const p of PANELS) {
 }
 
 // =====================================================
-// 8. AI select — with per-service URL memory
+// 8. AI select
 // =====================================================
 if (aiSelect) {
   aiSelect.addEventListener("change", () => {
     const opt = aiSelect.options[aiSelect.selectedIndex];
     if (!opt) return;
 
-    // Remember the URL of the *previous* service before we leave it
     const prevHost = hostOf(panelUrls[2]);
     if (prevHost) {
       aiUrls[prevHost] = panelUrls[2];
       saveAiUrlsSoon();
-      diag("remembered " + prevHost + " -> " + panelUrls[2]);
     }
 
-    // Load either the remembered URL for the new service, or its root
     const targetUrl = urlForOption(opt);
-    diag("AI select -> " + opt.value + " (loading " + targetUrl + ")");
     setPanelUrl(2, targetUrl, { load: true });
   });
 }
@@ -813,34 +1081,57 @@ document.addEventListener("click", (e) => {
 // 10. Iframe navigation relay from background
 // =====================================================
 browser.runtime.onMessage.addListener((msg) => {
-  if (!msg || msg.type !== "iframe-navigated") return;
+  if (!msg) return;
 
-  let panelId = msg.panelId;
-  if (!panelId) panelId = matchUrlToPanel(msg.url);
-  if (!panelId) return;
+  if (msg.type === "iframe-navigated") {
+    let panelId = msg.panelId;
+    if (!panelId) panelId = matchUrlToPanel(msg.url);
+    if (!panelId) return;
 
-  if (panelUrls[panelId] === msg.url) return;
+    if (panelUrls[panelId] === msg.url) return;
 
-  panelUrls[panelId] = msg.url;
-  updateUrlInput(panelId, msg.url);
-  updateRagInput(panelId, msg.url);
+    panelUrls[panelId] = msg.url;
+    updateUrlInput(panelId, msg.url);
+    updateRagInput(panelId, msg.url);
 
-  const panel = document.getElementById("panel-" + panelId);
-  if (panel) panel.dataset.source = msg.url;
+    const panel = document.getElementById("panel-" + panelId);
+    if (panel) panel.dataset.source = msg.url;
 
-  if (panelId === 2) {
-    const h = hostOf(msg.url);
-    if (h) {
-      aiUrls[h] = msg.url;
-      saveAiUrlsSoon();
+    if (panelId === 2) {
+      const h = hostOf(msg.url);
+      if (h) {
+        aiUrls[h] = msg.url;
+        saveAiUrlsSoon();
+      }
+      if (aiSelect) {
+        const match = optionForUrl(msg.url);
+        if (match) aiSelect.value = match.value;
+      }
     }
-    if (aiSelect) {
-      const match = optionForUrl(msg.url);
-      if (match) aiSelect.value = match.value;
-    }
+
+    saveUrlSoon();
+    return;
   }
 
-  saveUrlSoon();
+  if (msg.type === "kb-fill") {
+    const textarea = document.getElementById("kb-text");
+    if (textarea) {
+      textarea.value = msg.text;
+      textarea.focus();
+      // Open the KB panel so the user sees it
+      const panel = document.getElementById("kb-panel");
+      const toggle = document.getElementById("kb-toggle");
+      if (panel && panel.style.display === "none") {
+        panel.style.display = "flex";
+        if (toggle) toggle.classList.add("active");
+      }
+      const result = document.getElementById("kb-result");
+      if (result) {
+        result.textContent = "Text loaded. Add tags and click Upload.";
+        result.className = "kb-result";
+      }
+    }
+  }
 });
 
 // =====================================================
@@ -854,7 +1145,7 @@ window.addEventListener("pagehide", () => {
 });
 
 // =====================================================
-// 12. Register panels with background (for frame mapping)
+// 12. Register panels with background
 // =====================================================
 function registerPanels() {
   try {
@@ -870,7 +1161,188 @@ function registerPanels() {
 }
 
 // =====================================================
-// 13. Resize
+// 13. Knowledge Base UI
+// =====================================================
+const kbToggle = document.getElementById("kb-toggle");
+const kbPanel = document.getElementById("kb-panel");
+const kbUploadBtn = document.getElementById("kb-upload");
+const kbClearBtn = document.getElementById("kb-clear");
+const kbSourceSel = document.getElementById("kb-source");
+const kbTagsInput = document.getElementById("kb-tags");
+const kbTextArea = document.getElementById("kb-text");
+const kbResult = document.getElementById("kb-result");
+const kbStatus = document.getElementById("kb-status");
+const kbListDiv = document.getElementById("kb-list");
+const kbServerBtn = document.getElementById("kb-server-btn");
+const kbListBtn = document.getElementById("kb-list-btn");
+
+if (kbToggle) {
+  kbToggle.addEventListener("click", () => {
+    const hidden = kbPanel.style.display === "none";
+    kbPanel.style.display = hidden ? "flex" : "none";
+    kbToggle.classList.toggle("active", hidden);
+  });
+}
+
+if (kbServerBtn) {
+  kbServerBtn.addEventListener("click", () => {
+    const current = kbServer;
+    const next = prompt("RAG server base URL:", current);
+    if (next && next.trim()) {
+      kbServer = next.trim().replace(/\/+$/, "");
+      saveKbServer();
+      toast("KB server set to " + kbServer);
+    }
+  });
+}
+
+if (kbClearBtn) {
+  kbClearBtn.addEventListener("click", () => {
+    kbTextArea.value = "";
+    kbTagsInput.value = "";
+    if (kbResult) { kbResult.textContent = ""; kbResult.className = "kb-result"; }
+  });
+}
+
+if (kbUploadBtn) {
+  kbUploadBtn.addEventListener("click", async () => {
+    const text = (kbTextArea.value || "").trim();
+    if (!text) {
+      kbResult.textContent = "Nothing to upload — paste or right-click some text first.";
+      kbResult.className = "kb-result err";
+      return;
+    }
+
+    const source = kbSourceSel.value || "user";
+    const tags = (kbTagsInput.value || "")
+      .split(",")
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    // Auto-tag with the source panel URLs, if any
+    if (panelUrls[1]) tags.push("CWR");
+    if (panelUrls[3]) tags.push("IGI");
+
+    const payload = {
+      source,
+      tags,
+      text,
+      metadata: {
+        from: hostOf(panelUrls[2]) || "workspace",
+        urls: {
+          p1: panelUrls[1],
+          p3: panelUrls[3]
+        },
+        addedAt: Date.now()
+      }
+    };
+
+    kbUploadBtn.disabled = true;
+    kbResult.textContent = "Uploading to " + kbServer + " ...";
+    kbResult.className = "kb-result";
+
+    try {
+      const res = await fetch(kbServer + "/v1/rag/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || ("HTTP " + res.status));
+      }
+
+      kbResult.textContent = "Stored " + (data.chunks ?? "?") + " chunks — id " + (data.id || "unknown");
+      kbResult.className = "kb-result ok";
+      kbTextArea.value = "";
+      kbTagsInput.value = "";
+      toast("KB: stored " + (data.chunks ?? 0) + " chunks");
+      refreshKbStatus();
+    } catch (e) {
+      kbResult.textContent = "Upload failed: " + e.message;
+      kbResult.className = "kb-result err";
+    } finally {
+      kbUploadBtn.disabled = false;
+    }
+  });
+}
+
+async function refreshKbStatus() {
+  if (!kbStatus) return;
+  try {
+    const res = await fetch(kbServer + "/v1/rag/list", { method: "GET" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    const total = data.total ?? (data.documents ? data.documents.length : 0);
+    kbStatus.textContent = total + " doc" + (total === 1 ? "" : "s") + " · " + hostOf(kbServer);
+  } catch (e) {
+    kbStatus.textContent = "KB offline · " + hostOf(kbServer);
+  }
+}
+
+if (kbListBtn) {
+  kbListBtn.addEventListener("click", async () => {
+    kbListDiv.innerHTML = "Loading...";
+    try {
+      const res = await fetch(kbServer + "/v1/rag/list");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      const docs = data.documents || [];
+      if (docs.length === 0) {
+        kbListDiv.textContent = "(empty)";
+        return;
+      }
+      kbListDiv.innerHTML = "";
+      for (const d of docs.slice(0, 50)) {
+        const el = document.createElement("div");
+        el.className = "kb-list-item";
+        el.innerHTML =
+          '<span class="kb-li-meta">' +
+          (d.source || "?") + " · " +
+          (d.tags || []).join(",") + " · " +
+          (d.total_chunks || "?") + " chunks" +
+          '</span><button class="kb-li-del" data-id="' + d.id + '" title="Delete">🗑️</button>';
+        kbListDiv.appendChild(el);
+      }
+      kbListDiv.querySelectorAll(".kb-li-del").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          if (!confirm("Delete this document?")) return;
+          try {
+            await fetch(kbServer + "/v1/rag/doc/" + id, { method: "DELETE" });
+            btn.parentElement.remove();
+            refreshKbStatus();
+          } catch (e) {
+            toast("Delete failed: " + e.message);
+          }
+        });
+      });
+    } catch (e) {
+      kbListDiv.textContent = "Failed: " + e.message;
+    }
+  });
+}
+
+// Handle pending KB text from context menu (stored before workspace loaded)
+(async () => {
+  try {
+    const r = await browser.storage.local.get("kbPending");
+    if (r.kbPending) {
+      await browser.storage.local.remove("kbPending");
+      const textarea = document.getElementById("kb-text");
+      if (textarea) {
+        textarea.value = r.kbPending;
+        const panel = document.getElementById("kb-panel");
+        if (panel) panel.style.display = "flex";
+        if (kbToggle) kbToggle.classList.add("active");
+      }
+    }
+  } catch {}
+})();
+
+// =====================================================
+// 14. Resize
 // =====================================================
 const panels = [
   document.getElementById("panel-1"),
@@ -955,7 +1427,7 @@ document.addEventListener("mouseup", () => {
 });
 
 // =====================================================
-// 14. Toast
+// 15. Toast
 // =====================================================
 function toast(msg) {
   const t = document.createElement("div");
@@ -972,12 +1444,13 @@ function toast(msg) {
 }
 
 // =====================================================
-// 15. Init
+// 16. Init
 // =====================================================
 document.addEventListener("DOMContentLoaded", async () => {
   await loadLayout();
   await loadSavedUrls();
   await loadAiUrls();
+  await loadKbServer();
 
   for (const p of PANELS) {
     const url = panelUrls[p.id] || DEFAULT_URLS[p.id];
@@ -998,6 +1471,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   registerPanels();
+  refreshKbStatus();
 
   let t;
   window.addEventListener("resize", () => {
@@ -1011,38 +1485,47 @@ EOL
 # README + LICENSE
 # ---------------------------------------------------------------
 cat << 'EOL' > README.md
-# OFP ~ IGI ~ LLM Workspace — Firefox Extension v2.2
+# OFP ~ IGI ~ LLM Workspace — Firefox Extension v2.3
 
-Two-header three-panel remake workstation.
+Two-header three-panel workstation with **knowledge base upload**.
 
-## Fixed in v2.2
-- **`aiSelect` is now declared before use** — the previous build threw
-  `ReferenceError: aiSelect is not defined` at script parse time, which
-  killed the rest of the file (no RAG links, no resize, no persistence).
-- **`diag()` is now defined** — the previous build called it from the
-  AI-select handler without ever declaring it, causing a second
-  ReferenceError.
-- **Function-scope ordering fixed** — helpers, DOM refs, and state are
-  all declared before any code that references them.
+## New in v2.3
 
-## Per-service AI memory (new)
-The middle panel remembers the last URL you were on **for each AI**.
-Switching DeepSeek → ChatGPT → DeepSeek lands you back in the exact
-DeepSeek conversation you were in, not the root.
+- **KB toolbar** in the middle panel: source, tags, paste box, upload button
+- **Right-click menu**: "Send to knowledge base" on any selected text
+- **KB server config**: click ⚙️ to set the RAG server base URL
+- **KB list viewer**: click 📋 to see all stored documents, delete individual ones
+- **Status line**: shows how many docs are stored and which server
 
-- `aiUrls["chat.deepseek.com"]` = last DeepSeek URL
-- `aiUrls["chatgpt.com"]` = last ChatGPT URL
-- etc.
+## Upload endpoint expected on the server
+POST {KB_SERVER}/v1/rag/upload
+Body: {
+source: "DeepSeek",
+tags: ["igi→ofp", "patrol"],
+text: "the raw text...",
+metadata: { from, urls, addedAt }
+}
+Response: { ok: true, id: "...", chunks: 12 }
 
-Persisted to `browser.storage.local` under the key `aiUrls`.
+GET {KB_SERVER}/v1/rag/list
+Response: { documents: [ { id, source, tags, total_chunks, created_at } ], total }
 
-## Panel layout
-Two headers per panel:
-- Top: name (or AI select) + URL input + ↗
-- Bottom: `rag:` label + RAG input + 📋 (panels 1 and 3);
-  empty placeholder on panel 2
+DELETE {KB_SERVER}/v1/rag/doc/:id
+Response: { ok: true }
+
+The server-side patch to add these endpoints is a separate task.
+
+## Existing features (unchanged)
+
+- Three panels with two headers each
+- Live URL navigation per panel
+- Per-service AI memory
+- RAG links (per panel) auto-update
+- Resizable layout, persistence
+- Header stripping so GitHub and AI sites load
 
 ## Install
+
 `about:debugging` → Load Temporary Add-on → pick `manifest.json`
 EOL
 
@@ -1099,6 +1582,16 @@ if [ -f "$XPI_FILE" ]; then
     echo ""
     echo -e "${CYAN}🚀 INSTALL:${NC}"
     echo -e " • about:debugging → Load Temporary Add-on → ${EXTNAME}/manifest.json"
+    echo ""
+    echo -e "${YELLOW}📚 KB TOOLBAR:${NC}"
+    echo -e " • Middle panel bottom header now has: 📚 KB, status, ⚙️, 📋"
+    echo -e " • Click 📚 KB to open the paste box"
+    echo -e " • Right-click any selection → 'Send to knowledge base'"
+    echo -e " • Click ⚙️ to set your RAG server URL"
+    echo ""
+    echo -e "${YELLOW}⚠️ SERVER SIDE:${NC}"
+    echo -e " • Add /v1/rag/upload, /v1/rag/list, /v1/rag/doc/:id to your RAG server"
+    echo -e " • Until then, KB shows 'offline' status (still works for existing RAG links)"
 else
     echo -e "${RED}❌ Failed to create XPI${NC}"
 fi

@@ -1,0 +1,39 @@
+{
+  "manifest_version": 2,
+  "name": "OFP ~ IGI ~ LLM Workspace",
+  "version": "2.3.0",
+  "description": "Two-header three-panel remake workstation with per-panel URL persistence, per-service AI memory, and knowledge base upload.",
+  "icons": {
+    "48": "icons/icon.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "webRequest",
+    "webRequestBlocking",
+    "webNavigation",
+    "storage",
+    "tabs",
+    "contextMenus",
+    "clipboardWrite",
+    "<all_urls>"
+  ],
+  "browser_action": {
+    "default_icon": "icons/icon.png",
+    "default_title": "OFP ~ IGI ~ LLM Workspace"
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "web_accessible_resources": [
+    "workspace.html",
+    "workspace.css",
+    "workspace.js"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "@ofp-igi-llm-workspace-v2",
+      "strict_min_version": "78.0"
+    }
+  }
+}

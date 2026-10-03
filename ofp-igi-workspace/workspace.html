@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OFP ~ IGI ~ LLM Workspace</title>
+<link rel="icon" href="icons/icon.png" type="image/png">
+<link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- ============ PANEL 1: OFP / CWR ============ -->
+  <div class="panel" id="panel-1" data-source="https://github.com/BohemiaInteractive/CWR">
+    <div class="panel-header top-header">
+      <span class="panel-title">OFP · CWR</span>
+      <input type="text" class="url-input" id="nav-1"
+             spellcheck="false" placeholder="Enter URL and press Enter...">
+      <a class="open-btn" id="open-1" target="_blank" rel="noopener" title="Open in new tab">↗</a>
+    </div>
+    <div class="panel-header bottom-header">
+      <span class="rag-label">rag:</span>
+      <input type="text" class="rag-input" id="rag-1" readonly title="RAG link (auto-updates)">
+      <button class="mini-btn" data-copy="1" title="Copy RAG link">📋</button>
+    </div>
+    <div class="iframe-container">
+      <iframe id="iframe-1" loading="lazy"></iframe>
+    </div>
+  </div>
+
+  <div class="resizer" data-target="0"></div>
+
+  <!-- ============ PANEL 2: AI chat + KB toolbar ============ -->
+  <div class="panel" id="panel-2" data-source="https://chat.deepseek.com">
+    <div class="panel-header top-header">
+      <select class="ai-select" id="ai-2" title="Change AI service">
+        <option value="https://chat.deepseek.com">DeepSeek</option>
+        <option value="https://chatgpt.com">ChatGPT</option>
+        <option value="https://claude.ai">Claude</option>
+        <option value="https://gemini.google.com">Gemini</option>
+        <option value="https://chat.mistral.ai">Mistral</option>
+        <option value="https://copilot.microsoft.com">Copilot</option>
+        <option value="https://www.perplexity.ai">Perplexity</option>
+      </select>
+      <input type="text" class="url-input" id="nav-2"
+             spellcheck="false" placeholder="Enter URL and press Enter...">
+      <a class="open-btn" id="open-2" target="_blank" rel="noopener" title="Open in new tab">↗</a>
+    </div>
+
+    <!-- KB toolbar replaces the old "— no RAG —" placeholder -->
+    <div class="panel-header kb-header">
+      <button class="kb-toggle" id="kb-toggle" title="Toggle knowledge base panel">📚 KB</button>
+      <span class="kb-status" id="kb-status">0 stored</span>
+      <button class="kb-action" id="kb-server-btn" title="Configure RAG server">⚙️</button>
+      <button class="kb-action" id="kb-list-btn" title="List stored docs">📋</button>
+    </div>
+
+    <!-- Hidden by default; shown when KB toggle is on -->
+    <div class="kb-panel" id="kb-panel" style="display:none;">
+      <div class="kb-row">
+        <span class="kb-label">source</span>
+        <select id="kb-source" class="kb-select">
+          <option>DeepSeek</option>
+          <option>ChatGPT</option>
+          <option>Claude</option>
+          <option>Gemini</option>
+          <option>Mistral</option>
+          <option>Copilot</option>
+          <option>Perplexity</option>
+          <option>user</option>
+          <option>github</option>
+        </select>
+      </div>
+      <div class="kb-row">
+        <span class="kb-label">tags</span>
+        <input type="text" id="kb-tags" class="kb-input"
+               placeholder="igi→ofp, patrol, ..." spellcheck="false">
+      </div>
+      <textarea id="kb-text" class="kb-textarea"
+                placeholder="Paste AI reply here (or use right-click → Send to knowledge base)..."
+                spellcheck="false"></textarea>
+      <div class="kb-row kb-row-actions">
+        <button class="kb-upload" id="kb-upload">📥 Upload to KB</button>
+        <button class="kb-clear" id="kb-clear">Clear</button>
+      </div>
+      <div class="kb-result" id="kb-result"></div>
+      <div class="kb-list" id="kb-list"></div>
+    </div>
+
+    <div class="iframe-container">
+      <iframe id="iframe-2" referrerpolicy="no-referrer" loading="lazy"></iframe>
+    </div>
+  </div>
+
+  <div class="resizer" data-target="1"></div>
+
+  <!-- ============ PANEL 3: IGI research ============ -->
+  <div class="panel" id="panel-3" data-source="https://github.com/heaven-hm/project-igi-research-data/tree/main">
+    <div class="panel-header top-header">
+      <span class="panel-title">IGI · research</span>
+      <input type="text" class="url-input" id="nav-3"
+             spellcheck="false" placeholder="Enter URL and press Enter...">
+      <a class="open-btn" id="open-3" target="_blank" rel="noopener" title="Open in new tab">↗</a>
+    </div>
+    <div class="panel-header bottom-header">
+      <span class="rag-label">rag:</span>
+      <input type="text" class="rag-input" id="rag-3" readonly title="RAG link (auto-updates)">
+      <button class="mini-btn" data-copy="3" title="Copy RAG link">📋</button>
+    </div>
+    <div class="iframe-container">
+      <iframe id="iframe-3" loading="lazy"></iframe>
+    </div>
+  </div>
+
+</div>
+
+<script src="workspace.js"></script>
+</body>
+</html>
