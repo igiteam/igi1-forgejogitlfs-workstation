@@ -807,3 +807,118 @@ Or a generic "is this HTML?" detection after fetch — if Content-Type is text/h
 Is that already patched on the live server, or is it the next thing to fix? Because if it's not fixed, none of the -ai.txt workflow will work through the extension — you'd be feeding the AI GitHub's HTML chrome instead of your cards.
 
 Confirm that, and I'll write the three pieces: the RAG-link builder patch, the card-save endpoint, and the GitHub-raw rewrite. Small, focused, in the order that unblocks the loop.
+
+The 7 AI sites aren't alternatives — they're a panel of experts
+
+I was reading the AI dropdown as "pick one." But if you've got 7 and you want all of them, the workflow is:
+
+    DeepSeek reads the source and drafts a change
+
+    ChatGPT reads the same source and drafts a different change
+
+    Claude reads the same source and drafts a third
+
+    Gemini/Mistral/Copilot/Perplexity do the same
+
+    You compare all 7
+
+That's a council, not a switcher. And for a mod on a 20-year-old engine where you're not sure how to do X, getting 7 independent opinions is exactly the right call — because the "correct" answer isn't in any training set. It's in the intersection of what all 7 say.
+
+So the middle panel isn't "DeepSeek." It's "the room." The dropdown becomes a tabs strip with 7 tabs. Each tab is its own iframe with its own conversation state. All 7 stay loaded. You ask the same question in all 7, then read across.
+
+Or — better — one shared prompt box, submitted to all 7 at once, each returns into its own tab. But cross-origin iframes make that hard. You can't programmatically type into chat.deepseek.com from your extension unless they expose a public API or you use the browser's accessibility layer (fragile). So the realistic version is: 7 tabs, you paste the same question in each manually, then read.
+
+Which brings us to the second requirement.
+Extracting the whole conversation
+
+You want to keep what the AIs said. Not just "the winning answer" — the whole thing. Every reply from every site, timestamped, with which model said what.
+
+That's the input to the -ai.txt cards and the topic files. The conversation is the research. When you ask 7 AIs "how would you add anaglyph 3D to this engine?", the 7 replies together are the topic file's ai analysis section.
+
+So the flow becomes:
+text
+
+1. You open a topic in the side panel.
+2. You build a RAG link for the files involved.
+3. You paste the link + your question into DeepSeek, ChatGPT, Claude, Gemini,
+   Mistral, Copilot, Perplexity — all 7 tabs.
+4. Each answers.
+5. You click "Extract conversation" in the extension.
+6. The extension grabs the visible text from each open tab and appends it to
+   the topic file as:
+       ## DeepSeek
+       [reply]
+       ## ChatGPT
+       [reply]
+       ## Claude
+       [reply]
+       ...
+7. Status: research → in-progress.
+8. Later, you edit the source, patches appear, you repeat for the "does it work" round.
+
+The extraction is the missing piece. Two honest ways to build it:
+
+Option A — clipboard-based, one tab at a time. You select the AI's reply, right-click → "Send to topic → [topic name]". The extension reads the selection from the context menu (info.selectionText, which Firefox provides) and appends it to the currently-open topic. Zero cross-origin issues. Manual per reply but reliable.
+
+Option B — content-script scraping. Inject a content script into each AI host that knows how to read that site's message list. When you hit "Extract", it walks the DOM of each open tab, pulls the messages, returns them. Faster, does all 7 at once. But fragile — every site redesign breaks the scraper. You'd write 7 small scrapers, one per site.
+
+The pragmatic hybrid: start with Option A (works today, no site-specific code, survives redesigns), and if the manual selection gets tiring, add Option B scrapers for the 2–3 sites you use most.
+
+Option A actually has a nice property: you only save the replies you decide matter. DeepSeek's wrong answer stays out of the topic. You're the filter. That's not a bug — for this workflow, it's the right default.
+What this means for the extension
+
+The v2.3 structure holds. What changes:
+
+Panel 2 becomes a tabbed council. 7 AI sites, each in its own iframe, kept alive, switched via a tab strip at the top instead of a dropdown. Existing per-service URL memory already supports this — you just need to render 7 iframes and toggle visibility.
+
+The KB panel becomes a topic editor. Currently it's "paste text → upload to RAG server." That's wrong for the topic workflow. It should be:
+
+    A list of topics (from a topics/ directory served by the RAG server, or from extension storage)
+
+    Click a topic → it opens with its fields: title, status, related files, notes, open questions
+
+    A "Build RAG link" button that takes the related-files list and produces the multi-URL link
+
+    A "Copy link" button
+
+    A "Paste last reply" button that takes the clipboard and appends it under a ## <site> heading, using the currently-active AI tab's hostname as the heading
+
+    A "Save topic" button that writes it back
+
+The RAG server gets a /v1/topics/ endpoint. List, read, write. Text files only. Same pattern as the /v1/card/save idea, just a different directory. ~40 lines of Python.
+
+A global right-click item: "Send to topic → [currently open topic]". Fire on any selection, anywhere in the workspace (including inside the AI iframes, because the selection originates in the iframe but the context menu is registered on the whole tab). Appends the selection under a heading for whichever panel it came from.
+What I'd actually build, in order
+
+    GitHub-raw rewrite in processSingleUrl — 3 lines, unblocks everything. Without it the RAG URL for github.com/... returns HTML mush. This is the first fix because nothing else works if the RAG output is garbage.
+
+    Topic files — templates, a topics/ directory in Tree 1, a couple of stubs to see the shape. No code yet, just the format.
+
+    /v1/topics/ endpoints on the RAG server (list, get, put). ~40 lines of Python appended to gateway.js's route section.
+
+    Topic editor in the extension's KB panel — replaces the current flat upload list with a topic browser + editor. ~150 lines of JS + a bit of CSS.
+
+    "Build RAG link" button in the topic editor — takes the related source files: list from the open topic, converts paths to raw GitHub URLs, chains them into one RAG URL with &url= params. ~40 lines.
+
+    "Paste reply to topic" button — reads clipboard, appends under the active AI tab's heading. ~20 lines.
+
+    Right-click: "Send to topic" — already have the context-menu plumbing in background.js from the KB feature. Redirect it at topics instead of the KB upload. ~15 lines.
+
+    Panel 2 → tabs instead of dropdown — 7 iframes, tab strip, memory of which site is active. ~80 lines. This is the biggest single change and can come last, because the workflow works fine with the dropdown until you want to compare answers side by side.
+
+Items 1–4 give you a working topic system end to end. Items 5–8 are the ergonomics that make it pleasant.
+One thing to decide before I write
+
+Where do the topic files live?
+
+Two honest options:
+
+    topics/ in Tree 1, served over HTTP by the RAG server. Version-controlled with the source. git log topics/ becomes the research history. But: needs the RAG server to expose topics/ as a read/write directory.
+
+    browser.storage.local in the extension. No filesystem, no server changes. Export/import buttons for backup. But: not in the repo, harder to grep from the terminal, and if you clear the extension you lose everything.
+
+I'd pick topics/ in Tree 1 because the whole point of this project is that the research lives next to the code. But it does mean the RAG server needs a filesystem-write endpoint, which is the one place where "the RAG server only reads URLs" becomes "the RAG server also reads/writes local files." That's a real change in its security posture, so it should be a deliberate one — token-protected, path-restricted to the tree directory.
+
+Confirm that, and I'll write items 1 through 4 as the first drop. Then we look at how it feels, then do 5–8.
+
+One more thing to flag: the extension currently has a kbPending storage key for the KB upload from context menu. If topics replace the KB, that key needs a new name (topicPending) or the two features will fight. Small, but worth doing right now instead of retrofitting later.

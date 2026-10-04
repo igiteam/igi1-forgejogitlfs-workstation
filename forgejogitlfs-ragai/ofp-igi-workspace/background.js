@@ -131,7 +131,6 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
   const text = info.selectionText;
   if (!text || !text.trim()) return;
 
-  // If the click came from inside the workspace, deliver directly.
   if (tab && tab.url && tab.url.startsWith(WORKSPACE_URL)) {
     browser.tabs.sendMessage(tab.id, {
       type: "kb-fill",
@@ -140,7 +139,6 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  // Otherwise stash it and open/focus the workspace.
   await browser.storage.local.set({ kbPending: text });
   const tabs = await browser.tabs.query({ url: WORKSPACE_URL });
   if (tabs.length > 0) {

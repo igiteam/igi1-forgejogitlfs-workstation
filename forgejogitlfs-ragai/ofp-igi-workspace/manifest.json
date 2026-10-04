@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "OFP ~ IGI ~ LLM Workspace",
-  "version": "2.3.0",
-  "description": "Two-header three-panel remake workstation with per-panel URL persistence, per-service AI memory, and knowledge base upload.",
+  "version": "2.4.0",
+  "description": "Two-header three-panel remake workstation with per-panel URL history, per-service AI memory, and knowledge base upload.",
   "icons": {
     "48": "icons/icon.png",
     "128": "icons/icon128.png"

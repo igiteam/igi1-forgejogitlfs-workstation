@@ -7,6 +7,8 @@ const STORAGE_KEY_PANEL_URLS = "panelUrls";
 const STORAGE_KEY_AI_URLS = "aiUrls";
 const STORAGE_KEY_LAYOUT = "layout";
 const STORAGE_KEY_KB_SERVER = "kbServer";
+const STORAGE_KEY_HISTORY = "history";
+const HISTORY_CAP = 500;
 
 const DEFAULT_URLS = {
   1: "https://github.com/BohemiaInteractive/CWR",
@@ -86,6 +88,7 @@ function matchUrlToPanel(url) {
 let panelUrls = { ...DEFAULT_URLS };
 let aiUrls = {};
 let kbServer = KB_SERVER_DEFAULT;
+let historyData = { 1: [], 2: [], 3: [] };
 
 // =====================================================
 // 5. Persistence
@@ -141,6 +144,51 @@ async function saveAiUrlsSoon() {
 }
 
 // =====================================================
+// 5b. URL history
+// =====================================================
+async function loadHistory() {
+  try {
+    const r = await browser.storage.local.get(STORAGE_KEY_HISTORY);
+    if (r[STORAGE_KEY_HISTORY] && typeof r[STORAGE_KEY_HISTORY] === "object") {
+      historyData = {
+        1: Array.isArray(r[STORAGE_KEY_HISTORY][1]) ? r[STORAGE_KEY_HISTORY][1] : [],
+        2: Array.isArray(r[STORAGE_KEY_HISTORY][2]) ? r[STORAGE_KEY_HISTORY][2] : [],
+        3: Array.isArray(r[STORAGE_KEY_HISTORY][3]) ? r[STORAGE_KEY_HISTORY][3] : []
+      };
+    }
+  } catch {}
+}
+
+let saveHistoryTimer = null;
+function saveHistorySoon() {
+  if (saveHistoryTimer) return;
+  saveHistoryTimer = setTimeout(async () => {
+    saveHistoryTimer = null;
+    try {
+      await browser.storage.local.set({ [STORAGE_KEY_HISTORY]: historyData });
+    } catch {}
+  }, 500);
+}
+
+function recordHistory(panelId, url) {
+  if (!url || !panelId) return;
+  const list = historyData[panelId];
+  if (!Array.isArray(list)) return;
+
+  // Skip duplicates of the very last entry (same URL, same minute)
+  if (list.length > 0) {
+    const last = list[list.length - 1];
+    if (last.url === url && (Date.now() - last.ts) < 60000) return;
+  }
+
+  list.push({ url, ts: Date.now() });
+
+  while (list.length > HISTORY_CAP) list.shift();
+
+  saveHistorySoon();
+}
+
+// =====================================================
 // 6. Update helpers
 // =====================================================
 function updateUrlInput(panelId, url) {
@@ -184,6 +232,7 @@ function setPanelUrl(panelId, url, opts = {}) {
     }
   }
 
+  recordHistory(panelId, url);
   saveUrlSoon();
 }
 
@@ -268,6 +317,7 @@ browser.runtime.onMessage.addListener((msg) => {
       }
     }
 
+    recordHistory(panelId, msg.url);
     saveUrlSoon();
     return;
   }
@@ -277,7 +327,6 @@ browser.runtime.onMessage.addListener((msg) => {
     if (textarea) {
       textarea.value = msg.text;
       textarea.focus();
-      // Open the KB panel so the user sees it
       const panel = document.getElementById("kb-panel");
       const toggle = document.getElementById("kb-toggle");
       if (panel && panel.style.display === "none") {
@@ -378,7 +427,6 @@ if (kbUploadBtn) {
       .map(t => t.trim())
       .filter(Boolean);
 
-    // Auto-tag with the source panel URLs, if any
     if (panelUrls[1]) tags.push("CWR");
     if (panelUrls[3]) tags.push("IGI");
 
@@ -483,7 +531,7 @@ if (kbListBtn) {
   });
 }
 
-// Handle pending KB text from context menu (stored before workspace loaded)
+// Handle pending KB text from context menu
 (async () => {
   try {
     const r = await browser.storage.local.get("kbPending");
@@ -501,7 +549,153 @@ if (kbListBtn) {
 })();
 
 // =====================================================
-// 14. Resize
+// 14. History dropdown UI
+// =====================================================
+let openHistoryDropdown = null;
+
+function closeHistoryDropdown() {
+  if (openHistoryDropdown) {
+    openHistoryDropdown.remove();
+    openHistoryDropdown = null;
+    document.querySelectorAll(".history-btn.open").forEach(b => b.classList.remove("open"));
+  }
+}
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return hh + ":" + mm;
+}
+
+function shortHost(url) {
+  try { return new URL(url).hostname; } catch { return ""; }
+}
+
+function renderHistoryDropdown(panelId, anchorBtn) {
+  closeHistoryDropdown();
+
+  const panel = document.getElementById("panel-" + panelId);
+  if (!panel) return;
+
+  const dd = document.createElement("div");
+  dd.className = "history-dropdown visible";
+
+  const header = document.createElement("div");
+  header.className = "history-dropdown-header";
+
+  const title = document.createElement("span");
+  title.className = "history-dropdown-title";
+  title.textContent = "🕘 Panel " + panelId;
+
+  const filter = document.createElement("input");
+  filter.type = "text";
+  filter.className = "history-filter";
+  filter.placeholder = "filter...";
+  filter.spellcheck = false;
+
+  const clear = document.createElement("button");
+  clear.className = "history-clear";
+  clear.textContent = "Clear";
+
+  header.appendChild(title);
+  header.appendChild(filter);
+  header.appendChild(clear);
+  dd.appendChild(header);
+
+  const listDiv = document.createElement("div");
+  listDiv.className = "history-list";
+  dd.appendChild(listDiv);
+
+  function render() {
+    const q = filter.value.trim().toLowerCase();
+    const items = (historyData[panelId] || []).slice().reverse();
+    const currentUrl = panelUrls[panelId];
+    listDiv.innerHTML = "";
+
+    const filtered = q
+      ? items.filter(it => it.url.toLowerCase().includes(q))
+      : items;
+
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "history-empty";
+      empty.textContent = q ? "(no matches)" : "(empty)";
+      listDiv.appendChild(empty);
+      return;
+    }
+
+    for (const it of filtered.slice(0, 300)) {
+      const row = document.createElement("div");
+      row.className = "history-item" + (it.url === currentUrl ? " current" : "");
+
+      const t = document.createElement("span");
+      t.className = "history-item-time";
+      t.textContent = fmtTime(it.ts);
+
+      const u = document.createElement("span");
+      u.className = "history-item-url";
+      u.textContent = it.url;
+      u.title = it.url;
+
+      const h = document.createElement("span");
+      h.className = "history-item-host";
+      h.textContent = shortHost(it.url);
+
+      row.appendChild(t);
+      row.appendChild(u);
+      row.appendChild(h);
+
+      row.addEventListener("click", () => {
+        setPanelUrl(panelId, it.url, { load: true });
+        closeHistoryDropdown();
+      });
+
+      listDiv.appendChild(row);
+    }
+  }
+
+  filter.addEventListener("input", render);
+  clear.addEventListener("click", () => {
+    if (!confirm("Clear history for panel " + panelId + "?")) return;
+    historyData[panelId] = [];
+    saveHistorySoon();
+    render();
+  });
+
+  panel.style.position = panel.style.position || "relative";
+  panel.appendChild(dd);
+
+  openHistoryDropdown = dd;
+  anchorBtn.classList.add("open");
+
+  render();
+  filter.focus();
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-history]");
+  if (btn) {
+    e.stopPropagation();
+    const id = parseInt(btn.dataset.history, 10);
+    if (openHistoryDropdown && btn.classList.contains("open")) {
+      closeHistoryDropdown();
+    } else {
+      renderHistoryDropdown(id, btn);
+    }
+    return;
+  }
+  if (openHistoryDropdown && !e.target.closest(".history-dropdown")) {
+    closeHistoryDropdown();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeHistoryDropdown();
+});
+
+// =====================================================
+// 15. Resize
 // =====================================================
 const panels = [
   document.getElementById("panel-1"),
@@ -586,7 +780,7 @@ document.addEventListener("mouseup", () => {
 });
 
 // =====================================================
-// 15. Toast
+// 16. Toast
 // =====================================================
 function toast(msg) {
   const t = document.createElement("div");
@@ -603,13 +797,14 @@ function toast(msg) {
 }
 
 // =====================================================
-// 16. Init
+// 17. Init
 // =====================================================
 document.addEventListener("DOMContentLoaded", async () => {
   await loadLayout();
   await loadSavedUrls();
   await loadAiUrls();
   await loadKbServer();
+  await loadHistory();
 
   for (const p of PANELS) {
     const url = panelUrls[p.id] || DEFAULT_URLS[p.id];
